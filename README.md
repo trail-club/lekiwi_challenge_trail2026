@@ -357,15 +357,8 @@ cd /app && uv sync
 
 `uv.lock` も一緒に更新されるので、`pyproject.toml` と両方を commit してください。
 
-> ★ `uv lock` を別に打つ必要はありません。**`make build` も `colcon build` も
-> 要りません。** venv はイメージに焼かず `/app/.venv`（ホストのリポジトリ直下
-> `.venv`）に置いてあるので、`uv sync` だけで反映されます。
->
 > ★ **ホスト側で `uv sync` しないでください。** macOS には system の Python 3.12 が
 > 無いので `No interpreter found for Python 3.12` で止まります。
->
-> ★ `examples/pyproject.toml` は**別物**です。ROS 2 を使わない lerobot 直叩き用で、
-> ホストで動かします → [`examples/README.md`](examples/README.md)
 
 ### 編集したあと何をすればよいか
 
@@ -377,30 +370,6 @@ cd /app && uv sync
 | `pyproject.toml`（Python の依存） | コンテナ内で `cd /app && uv sync` |
 | `Dockerfile`（apt パッケージ） | `make build` してから `make bootstrap` |
 
-### テスト
-
-**実機なしで走ります。** コツは **ROS に依存しないロジックを別モジュールへ切り出す**
-ことです（`cartesian_math.py` / `reach_solver.py` / `bridge_core.py` / `kinematics.py`）。
-
-```bash
-# コンテナ内 /ros2_ws/src/
-python3 -m pytest my_first_pkg -q
-```
-
-> ★ `colcon test` ではなく `python3 -m pytest` を使っています。
-> `ros2 pkg create` が入れる lint テスト 3 つは使っていないので消して構いません。
-
-### ★ 画像を扱うときは `cv_bridge` を使わない
-
-`import` は通りますが、**`imgmsg_to_cv2()` を呼んだ瞬間に Segmentation fault**
-します（実測、exit 139）。`cv_bridge` の C 拡張が apt の numpy 1.26 に対して
-ビルドされているのに対し、このコンテナは lerobot の要求で numpy 2 系を使うためです。
-`cv_bridge/__init__.py` がこの `ImportError` を握り潰すので、**`import` も
-`CvBridge()` の生成も成功してしまいます。**
-
-やっているのは `bytes` を numpy に整形することだけなので自前で書けます
-→ `image_saver.py` の `imgmsg_to_np()`
-
 ### つまずきポイント
 
 | 症状 | 原因と対処 |
@@ -409,10 +378,18 @@ python3 -m pytest my_first_pkg -q
 | `Package '...' not found` | `make bootstrap` を打っていません（`install/` は `.gitignore` 済み） |
 | ビルドしたのに反映されない | `source install/setup.bash` を打ち直す |
 | `ros2 topic echo` に何も出ない | QoS 不一致。センサ系は `qos_profile_sensor_data`、CLI なら `--qos-reliability best_effort` |
-| 画像を扱うノードが SIGSEGV | `cv_bridge`（上記） |
+| **画像を扱うノードが Segmentation fault** | **★ `cv_bridge` を使わないこと**（下記） |
 | アームが `unconfigured` のまま | 実機の姿勢が URDF の可動域の外です。手で範囲内へ戻す |
 | `colcon build` が `can't copy '...'` | `--symlink-install` の壊れたリンク。`make bootstrap` が検出して直す |
 | RViz に見覚えのないロボットが出る | `ROS_DOMAIN_ID` の衝突。`docker ps` で他スタックが動いていないか見る |
+
+> ★ **`cv_bridge` は使わないこと。** 画像は `image_saver.py` の `imgmsg_to_np()`
+> のように自前で numpy へ整形します（やっているのは `bytes` の reshape だけです）。
+>
+> `import` も `CvBridge()` の生成も成功し、**`imgmsg_to_cv2()` を呼んだ瞬間に
+> SIGSEGV** します。`cv_bridge` の C 拡張は apt の numpy 1.26 向けで、
+> このコンテナは lerobot の要求で numpy 2 系を使うためです。
+> `cv_bridge/__init__.py` がその `ImportError` を握り潰すので、import では気付けません。
 
 ---
 
