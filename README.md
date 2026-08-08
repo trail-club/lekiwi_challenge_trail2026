@@ -166,7 +166,8 @@ make check
 
 > ★ 実機が無い環境（Mac など）では `make mock` で同じ launch を
 > `sim:=true backend:=mock` で起動できます。シリアルも USB も開きません。
-> ROS グラフ・TF・リーチのソルバ・SLAM/Nav2 はそのまま検証できます。
+> ROS グラフ・TF・SLAM/Nav2 はそのまま検証できます。リーチも実機と同じく
+> `reach.launch.py` を足せば動きます。
 
 ### 停止手順（★ 順番を守ること）
 
@@ -212,6 +213,15 @@ make release-wheels   # ホイールだけ止める（アームは落ちない�
 > publish するので、`odom` のままだとリーチが `REJECTED_WRONG_FRAME` で弾かれます。
 > 既定は `map` です。
 
+> ★ **"Publish Point" を使うにはリーチのノードを別に起動します。**
+> `robot.launch.py` が起動するのはロボット本体（アーム・ベース・LiDAR・カメラ）
+> までで、リーチは含みません。別ターミナルで:
+>
+> ```bash
+> cd docker/robot && make shell
+> ros2 launch lekiwi_examples reach.launch.py
+> ```
+
 ### ツール（上部のツールバー）
 
 | ツール | 出すもの | 何が起きるか |
@@ -246,16 +256,6 @@ make release-wheels   # ホイールだけ止める（アームは落ちない�
 > ★ 点群は Fixed Frame が `map` なので**自動的に `map` 上の正しい位置に出ます**。
 > カメラは URDF で `arm_gripper_link` に剛体固定されており、外部キャリブレーションは
 > 要りません。
-
-> ## ★ リーチは別途起動が必要です
->
-> `robot.launch.py` は**ロボットを動かせる状態にするところまで**で、リーチは
-> 起動しません。"Publish Point" を使う前に、別ターミナルで:
->
-> ```bash
-> cd docker/robot && make shell
-> ros2 launch lekiwi_examples reach.launch.py
-> ```
 
 ### リーチの結果を見る
 
@@ -309,8 +309,9 @@ $E ros2 topic pub --once -w 1 /so101/reach_target geometry_msgs/msg/PoseStamped 
 $E ros2 service call /so101/stow std_srvs/srv/Trigger '{}'
 ```
 
-> ★ **リーチのノードは別途起動が必要です**（`ros2 launch lekiwi_examples reach.launch.py`）。
-> `/clicked_point` と `/so101/reach_target` はそのノードが購読します。
+> ★ 上 4 つ（`/clicked_point` と `/so101/reach_*`）を扱うのは `lekiwi_examples`
+> のリーチノードです。`robot.launch.py` には含まれないので、
+> `ros2 launch lekiwi_examples reach.launch.py` を別に起動してください。
 >
 > ★ **届かない目標は「警告して何もしない」**のが仕様です。ベースは動きません。
 > 到達不能かどうかは**指令を出す前にオフラインで判定**しています。
