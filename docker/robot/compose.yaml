@@ -111,7 +111,9 @@ services:
       # ★ ROS ワークスペースはホストからマウントする。イメージにパッケージを
       #   焼き込まないので、lekiwi_description も so_arm101_description も
       #   ここから解決される。初回とパッケージ追加時は make bootstrap。
-      - ../../ros2_ws:/ros2_ws
+      # ★ リポジトリ全体を /app へ。venv (/app/.venv) をホスト側に置くため。
+      #   ワークスペースは /app/ros2_ws。/ros2_ws はイメージ内の symlink。
+      - ../..:/app
       - ./bootstrap.sh:/bootstrap.sh:ro
       # 保存した画像をホストから見るため (lekiwi_examples の example_sequence)
       - ../../captured_images:/captured_images

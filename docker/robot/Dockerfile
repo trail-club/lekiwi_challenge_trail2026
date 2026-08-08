@@ -115,8 +115,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ── 上流リポジトリ (ros2_so_arm / sllidar_ros2) ───────────────────────
 # ★ /ros2_ws ではなく /opt/upstream に置く。
-#   compose.yaml が ../../ros2_ws:/ros2_ws を bind mount するので、
-#   **Dockerfile が /ros2_ws に書いたものは実行時に完全に隠れる**（実測確認済み）。
+#   compose.yaml が ../.. を /app へ bind mount するので、
+#   **Dockerfile が /app 配下に書いたものは実行時に完全に隠れる**（実測確認済み）。
+#   /ros2_ws は /app/ros2_ws への symlink なので、そちらも同じこと。
 #   bootstrap.sh がここから ros2_ws/src/ へコピーする。
 #
 # これをイメージ側でやる理由:
@@ -132,9 +133,16 @@ RUN mkdir -p /opt/upstream \
     && vcs import /opt/upstream < /opt/so101_upstream.repos \
     && vcs export --exact /opt/upstream > /opt/upstream/.resolved.repos
 
-WORKDIR /ros2_ws
+WORKDIR /app
 
-# ── Python の実行依存 (uv + venv) ─────────────────────────────────────
+# ★ 既存のパスを壊さないための symlink。
+#   compose がリポジトリ全体を /app へマウントするので、ワークスペースの
+#   実体は /app/ros2_ws にある。README も docs も launch も長らく
+#   /ros2_ws と書いてきたので、そちらを生かす。
+#   （/ros2_ws には**もう何もマウントしない**ので、この symlink は隠れない）
+RUN ln -s /app/ros2_ws /ros2_ws
+
+# ── Python の実行依存 (uv) ────────────────────────────────────────────
 # アームのハードウェア通信・較正・モータ設定はすべて LeRobot 経由。
 # Feetech SDK や feetech_ros2_driver に直接依存を足さないこと。
 #
@@ -144,29 +152,27 @@ WORKDIR /ros2_ws
 #   --break-system-packages と「numpy を /usr/local で影にする」といった
 #   回避策が積み上がる。venv なら中身が uv.lock で固定される。
 #
-# ★ venv は /ros2_ws の**外**に置くこと。
-#   compose.yaml が ../../ros2_ws:/ros2_ws を bind mount するので、
-#   /ros2_ws 配下に置くと実行時に完全に隠れる (実測確認済み)。
+# ★ venv はイメージに焼かず、**起動時に /app/.venv へ作る**。
+#   compose がリポジトリを /app へ bind mount するので、イメージ側に
+#   /app/.venv を作っても実行時に完全に隠れる（CLAUDE.md の地雷）。
+#   bootstrap.sh が「無ければ uv venv && uv sync」する。
+#   代償は初回起動が遅いこと（約 1.7GB）。二回目からはホスト側に残る。
 #
 # ★ ROS の Python (rclpy / sensor_msgs / nav2_msgs …) は venv に入れない。
 #   PyPI に無く apt でしか入らないので、PYTHONPATH 経由で借りる。
-#   entrypoint.sh が「ROS を source → venv を activate」の順で用意する。
+#   entrypoint.sh が「ROS → ワークスペース → venv」の順で用意する。
 #   この順序だと sys.path は PYTHONPATH → venv になり、
 #     rclpy / メッセージ型 → /opt/ros/jazzy   (apt)
-#     numpy / lerobot / yaml → /opt/venv      (uv)
+#     numpy / lerobot / yaml → /app/.venv     (uv)
 #     自作パッケージ         → /ros2_ws/install (colcon)
 #   と解決される (実測で確認)。
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-COPY docker/robot/pyproject.toml docker/robot/uv.lock /opt/robot-venv/
-ENV UV_LINK_MODE=copy VIRTUAL_ENV=/opt/venv
-RUN --mount=type=cache,target=/root/.cache/uv \
-    cd /opt/robot-venv \
-    && uv venv /opt/venv \
-    && uv sync --frozen --active --no-install-project
+# ★ bind mount 越しの hardlink は失敗しうるのでコピーにする。
+ENV UV_LINK_MODE=copy
 
 # ソースと colcon の build/install/log は compose.yaml でホストから
-# /ros2_ws にマウントする。取得・パッチ適用・ビルドは bootstrap.sh に
-# 一本化し、ここでは ROS と Python の実行依存だけを用意する。
+# /app にマウントする。取得・パッチ適用・ビルドは bootstrap.sh に
+# 一本化し、ここでは ROS と apt の依存だけを用意する。
 #
 # ★ この方式なので、パッケージを増やしても Dockerfile に COPY を足す必要はない。
 #   lekiwi_description も so_arm101_description もマウントされた ros2_ws/src に
@@ -183,7 +189,7 @@ RUN chmod +x /entrypoint.sh
 RUN printf '%s\n' \
       'source /opt/ros/jazzy/setup.bash' \
       'if [ -f /ros2_ws/install/setup.bash ]; then source /ros2_ws/install/setup.bash; fi' \
-      'if [ -f /opt/venv/bin/activate ]; then source /opt/venv/bin/activate; fi' \
+      'if [ -f /app/.venv/bin/activate ]; then source /app/.venv/bin/activate; fi' \
       >> /etc/bash.bashrc
 
 ENTRYPOINT ["/entrypoint.sh"]

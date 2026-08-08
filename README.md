@@ -89,6 +89,19 @@ cd docker/robot
 make bootstrap
 ```
 
+これが 2 つのことをやります。
+
+1. **Python 環境を作る** — `uv sync` がリポジトリ直下に `.venv` を作ります
+   （★ 初回だけ約 1.7GB。torch を含むので時間がかかります）
+2. **ワークスペースを建てる** — 上流の配置 → `colcon build` → 静的検査
+
+> ★ **`.venv` はホスト側に残ります。** コンテナを作り直してもイメージを
+> 作り直しても消えないので、2 回目以降の `make bootstrap` は一瞬で終わります。
+>
+> ★ Python の依存はリポジトリ直下の `pyproject.toml` に足して、**コンテナ内で
+> `cd /app && uv sync` するだけ**です（`uv.lock` も一緒に更新されます）。
+> **`make build` も `colcon build` も要りません。**
+
 ---
 
 ## 4. 起動方法
@@ -332,12 +345,27 @@ ros2 run my_first_pkg hello
 
 ### 依存を足す
 
-`package.xml` に書けるのは rosdep キーがあるものだけです。
+`package.xml` に書けるのは rosdep キーがあるものだけです。`lerobot` と
+`feetech-servo-sdk`（import 名 `scservo_sdk`）にはありません。
 
-> ★ **`lerobot` と `feetech-servo-sdk`（import 名 `scservo_sdk`）には rosdep キーが
-> ありません。** Python の依存は `docker/robot/pyproject.toml` に足して `uv lock` を
-> 更新し、`make build` します。リポジトリ直下の `pyproject.toml` とは**別物**です
-> （あちらは `examples/` 用で、共有していません）。
+**Python の依存はリポジトリ直下の `pyproject.toml` に足します。**
+
+```bash
+# コンテナ内
+cd /app && uv sync
+```
+
+`uv.lock` も一緒に更新されるので、`pyproject.toml` と両方を commit してください。
+
+> ★ `uv lock` を別に打つ必要はありません。**`make build` も `colcon build` も
+> 要りません。** venv はイメージに焼かず `/app/.venv`（ホストのリポジトリ直下
+> `.venv`）に置いてあるので、`uv sync` だけで反映されます。
+>
+> ★ **ホスト側で `uv sync` しないでください。** macOS には system の Python 3.12 が
+> 無いので `No interpreter found for Python 3.12` で止まります。
+>
+> ★ `examples/pyproject.toml` は**別物**です。ROS 2 を使わない lerobot 直叩き用で、
+> ホストで動かします → [`examples/README.md`](examples/README.md)
 
 ### 編集したあと何をすればよいか
 
@@ -346,7 +374,8 @@ ros2 run my_first_pkg hello
 | Python / YAML / launch / URDF | **何もしなくていい。** launch を上げ直すだけ（`--symlink-install`） |
 | ファイルを**追加**した | `colcon build --symlink-install --packages-select <pkg>` |
 | パッケージを追加した | `make bootstrap` |
-| `Dockerfile` / `pyproject.toml` | `make build` してから `make bootstrap` |
+| `pyproject.toml`（Python の依存） | コンテナ内で `cd /app && uv sync` |
+| `Dockerfile`（apt パッケージ） | `make build` してから `make bootstrap` |
 
 ### テスト
 
@@ -441,8 +470,22 @@ trail_SO101/
 │   ├── rplidar_bringup/        LiDAR
 │   └── realsense_bringup/      カメラ
 ├── examples/                   ROS 2 を使わない lerobot 直叩き（+ SO101 モデル）
+│   ├── pyproject.toml          ★ そちら専用の uv。ホストで動かす
+│   └── uv.lock
+├── pyproject.toml              ★ ROS 2 開発用の uv。コンテナの中で使う
+├── uv.lock
 └── docs/                       ドキュメント
 ```
+
+> ## ★ uv のプロジェクトは 2 つあります。共有していません
+>
+> | | 何のため | venv | どこで動く |
+> | --- | --- | --- | --- |
+> | `pyproject.toml`（直下） | **ROS 2 開発** | `.venv` | コンテナの中（`/app/.venv`） |
+> | `examples/pyproject.toml` | lerobot 直叩き | `examples/.venv` | ホスト（Mac / Linux） |
+>
+> 中身のバイナリの OS が違うので、**そもそも共有できません**。
+> ROS 2 の実機開発に必要なのは前者だけです。
 
 > ★ `ros2_ws/src/ros2_so_arm` と `ros2_ws/src/sllidar_ros2` は**上流**で、
 > `.gitignore` 済みです。`make bootstrap` がイメージから配置します。

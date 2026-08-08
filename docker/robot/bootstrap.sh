@@ -19,6 +19,40 @@ set -eo pipefail
 # (AMENT_TRACE_SETUP_FILES: unbound variable になる)。
 source /opt/ros/jazzy/setup.bash
 
+# ── Python の環境 (uv) ────────────────────────────────────────────────
+# ★ venv はイメージに焼かない。compose がリポジトリを /app へ bind mount
+#   するので、イメージ側に作っても実行時に隠れる（CLAUDE.md の地雷）。
+#   ここで作るとホスト側 (<リポジトリ>/.venv) に残り、コンテナを作り直しても
+#   イメージを作り直しても消えない。
+#
+# ★ 初回は約 1.7GB のダウンロードとインストールがある（torch だけで 574MB）。
+#   二回目以降は uv が「変更なし」と判断して一瞬で終わる。
+#
+# ★ 「.venv があるか」で分岐しない。`uv venv` だけ成功して `uv sync` が
+#   失敗すると**空の venv が残り**、次回そこを「作成済み」と誤判定して
+#   `No module named colcon` で落ちる（実際に踏んだ）。
+#   `uv sync` は venv が無ければ自分で作るので、毎回これだけ呼べばよい。
+#
+# ★★ `--frozen` ではなく `--locked` を使うこと。
+#   --frozen は「lock をそのまま使う」なので、pyproject.toml に依存を足して
+#   uv.lock を更新し忘れていると、**終了コード 0 のまま追加を黙って取り消す**
+#   （足したパッケージが uninstall される。実測で確認した）。
+#   --locked は食い違いを終了コード 1 で知らせる。
+[ -d /app/.venv ] || echo "== Python 環境を作ります (初回のみ。約 1.7GB) =="
+cd /app
+if ! uv sync --locked --no-install-project; then
+  echo >&2
+  echo "ERROR: pyproject.toml と uv.lock が食い違っています。" >&2
+  echo "       依存を足したなら、コンテナ内で同期してください:" >&2
+  echo "         cd /app && uv sync" >&2
+  echo "       (uv sync が uv.lock も更新します。両方 commit すること)" >&2
+  exit 1
+fi
+# ★ colcon を venv の側で動かす。apt の /usr/bin/colcon で建てると
+#   console_script の shebang が /usr/bin/python3 になり、`ros2 run` した
+#   ノードが venv を見ずに ModuleNotFoundError で落ちる（実測）。
+source /app/.venv/bin/activate
+
 cd /ros2_ws
 
 # ★ colcon の作業ディレクトリを先に作っておく。
@@ -37,8 +71,8 @@ mkdir -p build install log
 # ネットワークを一切使わない。
 #
 # ★ なぜコピーが要るのか
-#   compose.yaml が ../../ros2_ws:/ros2_ws を bind mount するため、
-#   イメージが /ros2_ws に置いたものは実行時に完全に隠れる（実測確認済み）。
+#   compose.yaml が ../.. を /app へ bind mount するため、
+#   イメージが /app（= /ros2_ws の実体）に置いたものは実行時に完全に隠れる。
 #   マウントの外 (/opt/upstream) からマウントの中へ運ぶ必要がある。
 #
 # ★ ホスト側にも実体を置く（symlink にしない）理由
@@ -129,7 +163,7 @@ echo "== ビルドします =="
 #   /usr/bin/python3 になり、console_script の shebang がそこを指す。
 #   すると `ros2 run` したノードが venv を見ず、scservo_sdk や lerobot が
 #   import できずに落ちる (実測)。python3 は venv のものなので、
-#   -m で呼べば shebang は /opt/venv/bin/python3 になる。
+#   -m で呼べば shebang は /app/.venv/bin/python3 になる。
 python3 -m colcon build --symlink-install \
   --packages-ignore so_arm_gz so_arm100_description so_arm100_moveit_config
 

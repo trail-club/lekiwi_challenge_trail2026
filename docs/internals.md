@@ -403,7 +403,8 @@ slam_toolbox が死んでも凍った `map → odom` を返し続けるので、
 
 ### ★ なぜ上流を `/opt/upstream` に置くのか
 
-`compose.yaml` が `../../ros2_ws:/ros2_ws` を bind mount するので、
+`compose.yaml` が `../..` を `/app` へ bind mount するので（`/ros2_ws` は
+`/app/ros2_ws` への symlink）、
 **Dockerfile が `/ros2_ws` に置いたものは実行時に完全に隠れます**（実測確認済み）。
 マウントの外に置いてからコピーする必要があります。
 
