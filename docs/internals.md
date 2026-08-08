@@ -28,9 +28,10 @@ robot.launch.py
 └─ d435i.launch.py            ← realsense2_camera（sim では起動しない）
 ```
 
-★ **リーチと逆運動学はここに居ません。** `lekiwi_examples` に移してあり、
-別ターミナルで起動します。`robot.launch.py` は「ロボットを動かせる状態にする」
-ところまでで、その上で何をするかはアプリケーション側の責任です。
+★ **`robot.launch.py` が起動するのはここまで**です。ロボットを動かせる状態に
+するところまでを受け持ち、その上で何をするかはアプリケーション側が決めます。
+リーチも逆運動学もアプリケーション側（`lekiwi_examples`）にあり、別ターミナルで
+起動します。
 
 ```bash
 ros2 launch lekiwi_examples reach.launch.py      # map 上の点へリーチ
@@ -244,7 +245,7 @@ map
 カメラは URDF で `arm_gripper_link` に**剛体固定**されています。だから
 `map → カメラ` は TF を辿るだけで出ます。`realsense2_camera` は
 `wrist_camera_link` を**根**として光学フレームを生やすだけで、
-`wrist_camera_link` を**子にする TF は出しません**。so URDF 側が親を与えても
+`wrist_camera_link` を**子にする TF は出しません**。だから URDF 側が親を与えても
 二重定義になりません（`laser_link` と同じパターン）。
 
 ---
@@ -268,63 +269,11 @@ lekiwi_base_driver        … 車輪 3 関節
 
 - 車輪 3 関節とアーム 6 関節が別メッセージで来ても問題ありません
 - ★ **`/joint_states` を購読する側は、複数メッセージにまたがって蓄積する必要があります。**
-  1 通目だけ見ると関節が足りません（`cartesian_jog.py` と `reach_to_point.py` は
+  1 通目だけ見ると関節が足りません（`lekiwi_examples` の `cartesian_jog.py` と `reach_to_point.py` は
   どちらも辞書に `update()` していく作りです）
 - ★ **publisher が死ぬと TF は消えずに「凍り」ます。**
-  だからリーチノードは TF の**鮮度**を見ています（次節）
-
----
-
-## リーチはどう解いているのか
-
-```
-/clicked_point (PointStamped) または /so101/reach_target (PoseStamped)
-    │
-    ▼ ① frame_id が map か確認     → 違えば REJECTED_WRONG_FRAME
-    ▼ ② TF で map → arm_base_link  → 引けなければ REJECTED_NO_TF
-    ▼ ③ TF の鮮度を見る            → 古ければ REJECTED_STALE_TF
-    ▼ ④ 距離の足切り               → 遠すぎれば REJECTED_OUT_OF_RANGE
-    ▼ ⑤ ★ オフラインで IK を収束させる（reach_solver.py）
-    │      届かなければ REJECTED_UNREACHABLE  ← ここまでアームは動かない
-    ▼ ⑥ FollowJointTrajectory を 1 本送る
-    ▼ ⑦ 実行中もベースの動きを監視 → 動いたら ABORTED_BASE_MOVED
-```
-
-### ★ ⑤ が設計の要
-
-`cartesian_math.damped_least_squares` は**速度レベル**のソルバです。
-そのまま指令に使うと「動かしてみて届かなかった」になります。
-
-`reach_solver.py` はこれを**指令を出す前にオフラインで反復**します。
-
-```
-for i in range(200):
-    tip, J = chain.position_and_jacobian(q, controlled)   # 順運動学とヤコビアン
-    err = target - tip
-    if |err| < 0.005:  return SOLVED
-    if 改善が止まった:  return STALLED        # ← 到達不能
-    dq = damped_least_squares(J, step, ...)
-    q  = arm_target(q, dq, ...)               # 関節上下限でクランプ
-```
-
-これで**「届かないなら警告して何もしない」が成立します**。
-`arm_target` が関節上下限でクランプするので、ワークスペース外では残差が
-改善しなくなります（＝ `STALLED`）。**どの関節が上限に張り付いたかも報告する**ので、
-「遠すぎる」のか「ベースを回せば届く」のかが区別できます。
-
-### ★ ベースは絶対に動かしません
-
-「届かなければベースを動かして近づく」ことはしません。これは
-**リーチノードが `/cmd_vel` の publisher を一切作らない**ことで
-構造的に保証していて、AST を走査する単体テストで固定してあります
-(`test_reach_node_contract.py`)。
-
-### ★ 鮮度チェックがなぜ要るか
-
-`lookup_transform` を最新時刻で引くと、**古い TF でも成功します**。
-slam_toolbox が死んでも凍った `map → odom` を返し続けるので、
-**黙って過去の世界で解いてしまいます**。返ってきた `header.stamp` を
-現在時刻と比べ、`tf_max_age` を超えたら `REJECTED_STALE_TF` にします。
+  TF を使う側は `header.stamp` を見て鮮度を判断してください
+  （リーチノードの例は [`examples.md`](examples.md)）
 
 ---
 
@@ -371,16 +320,14 @@ slam_toolbox が死んでも凍った `map → odom` を返し続けるので、
 
 ## なぜ 1 コンテナなのか
 
-以前は 4 コンテナでした（ベース+Nav2 / LiDAR / アーム / カメラ）。分けた理由は
-「安全論理が逆で、compose の `stop_signal` はサービス単位にしか設定できないから」
-でしたが、実際に踏んだ問題の多くは**コンテナが分かれていること自体**が原因でした。
+アーム・ベース・LiDAR・カメラを 1 コンテナに入れています。分けると次が起きます。
 
-- `ROS_DOMAIN_ID` の食い違い
-- `nav2_msgs` がベースのイメージにしかなく、アーム側から action を叩くと
+- `ROS_DOMAIN_ID` の食い違いで `/tf` と `/robot_description` が混信する
+- `nav2_msgs` が片方のイメージにしか無く、もう片方から action を叩くと
   `The passed action type is invalid`
-- `docker compose down` が `exec` した launch に SIGINT を届けない
+- discovery の遅れ、`/robot_description` の二重 latch
 
-いまは 1 コンテナで、**launch を前面で走らせて `Ctrl+C` する**運用に統一しています。
+運用は **launch を前面で走らせて `Ctrl+C` する**の一本です。
 
 > ★ **最後の 1 つは統合しても消えていません。** `docker compose down` が
 > SIGTERM を送るのは**コンテナの PID 1 だけ**で、`exec` したプロセスには
@@ -389,7 +336,7 @@ slam_toolbox が死んでも凍った `map → odom` を返し続けるので、
 > ロボットが動き出す**ので採っていません。
 > **`Ctrl+C` してから `down` する**のが正しい順序です。
 
-経緯と代償は [`../docker/robot/README.md`](../docker/robot/README.md)。
+停止と復帰の詳細は [`../docker/robot/README.md`](../docker/robot/README.md)。
 
 ---
 
@@ -427,7 +374,6 @@ SHA とワークスペースの中身が**ずれようがありません**。
 
 | 知りたいこと | どこ |
 | --- | --- |
-| 使い方の手順 | [`../README.md`](../README.md) |
-| 自分でノードを書く | [`../README.md`](../README.md) |
+| 使い方の手順・ノードの書き方 | [`../README.md`](../README.md) |
 | リーチとキーボード操作 | [`examples.md`](examples.md) |
 | 停止・非常停止・復帰 | [`../docker/robot/README.md`](../docker/robot/README.md) |

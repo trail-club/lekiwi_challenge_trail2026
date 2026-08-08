@@ -36,7 +36,6 @@ cd trail_SO101
 **初回のみ。20〜40 分かかります**（約 7.9GB）。
 
 ```bash
-cd docker/robot
 make build
 ```
 
@@ -132,44 +131,23 @@ ls ~/.cache/huggingface/lerobot/calibration/robots/so_follower/
 #    -> my_follower.json
 ```
 
-> ★ **較正値の実体はサーボの EEPROM で、この JSON は控えです。書き込みは
-> 永続的です。** 較正し直す前に必ずバックアップを取ってください。
->
-> ```bash
-> cp -a ~/.cache/huggingface/lerobot/calibration/robots/so_follower \
->       ~/so_follower_backup_$(date +%Y%m%d_%H%M)
-> ```
->
-> ★ **ROS を止めた状態で実行してください。** Feetech のバスはマスタが 1 つしか
-> 居られないので、`robot.launch.py` が動いていると失敗します。
->
-> ★ JSON は**較正した PC のホームにしか存在しません。** `compose.yaml` が
-> このディレクトリを読み取り専用でコンテナへ渡します。
-
-`lerobot_examples/` でできることは他にもあります
-→ [`lerobot_examples/README.md`](lerobot_examples/README.md)
-
 ---
 
 ## 5. ワークスペースを初期化する
 
-```bash
-cd docker/robot
+```bash\
 make bootstrap
 ```
 
+bootstrapがuv syncとcolcon build --symlink-installをします。
 これが 2 つのことをやります。
 
 1. **Python 環境を作る** — `uv sync` がリポジトリ直下に `.venv` を作ります
    （★ 初回だけ約 1.7GB。torch を含むので時間がかかります）
 2. **ワークスペースを建てる** — 上流の配置 → `colcon build` → 静的検査
 
-> ★ **`.venv` はホスト側に残ります。** コンテナを作り直してもイメージを
-> 作り直しても消えないので、2 回目以降の `make bootstrap` は一瞬で終わります。
->
-> ★ Python の依存はリポジトリ直下の `pyproject.toml` に足して、**コンテナ内で
-> `cd /app && uv sync` するだけ**です（`uv.lock` も一緒に更新されます）。
-> **`make build` も `colcon build` も要りません。**
+> ★ Python の依存変更時はリポジトリ直下の `pyproject.toml` に足して、コンテナ内で
+> `cd /app && uv sync` してください。
 
 ---
 
@@ -244,7 +222,7 @@ make release
 | Wrist Camera（軸） | `wrist_camera_link` | **OFF** |
 
 > ★ **Wrist Camera Cloud は既定 OFF です。** `realsense2_camera` は購読者が
-> ゼロなら点群の生成自体をスキップするので、切っている間はコストがゼロです。
+> ゼロなら点群の生成自体をスキップします。
 > 見たいときだけ ON にしてください。
 
 ## 8. サブシステム別の Topic / Service / Action
@@ -252,36 +230,29 @@ make release
 **よく使うものだけ**を挙げます。全部を見るなら `ros2 topic list -t` /
 `ros2 action list -t` / `ros2 service list -t` が確実です。
 
-以降 `$E` は次の前置きです（`docker exec` は ENTRYPOINT を通らないので必須）。
-
-```bash
-E="docker compose -f docker/robot/compose.yaml exec robot /entrypoint.sh"
-```
-
 ### 8-1. アーム（SO-101）
 
 | 名前 | 種別 | 用途 |
 | --- | --- | --- |
 | `/joint_trajectory_controller/follow_joint_trajectory` | **Action** | 関節を直接動かす（5 関節） |
-| `/gripper_controller/gripper_cmd` | **Action** | グリッパ |
+| `/parallel_gripper_action_controller/GripperActionController` | **Action** | グリッパ |
 | `/so101/stow` | **Service** | **アームを畳む。停止前に必ず** |
 | `/joint_states` | Topic `JointState` | 関節角。★ publisher は 2 つ（車輪 / アーム） |
 | `/so101/lerobot_bridge/shutdown` | **Service** | トルク OFF して終了 |
 
 ```bash
 # ★ 🔴 実際に動きます。人が立ち会うこと
-$E ros2 action send_goal -f /joint_trajectory_controller/follow_joint_trajectory \
+ros2 action send_goal -f /joint_trajectory_controller/follow_joint_trajectory \
   control_msgs/action/FollowJointTrajectory \
   '{trajectory: {joint_names: [arm_shoulder_pan_joint, arm_shoulder_lift_joint,
      arm_elbow_flex_joint, arm_wrist_flex_joint, arm_wrist_roll_joint],
     points: [{positions: [0.0, 0.0, 0.5, 0.5, 0.0], time_from_start: {sec: 3}}]}}'
 
 # 畳む（★ 停止前に必ず）
-$E ros2 service call /so101/stow std_srvs/srv/Trigger '{}'
+ros2 service call /so101/stow std_srvs/srv/Trigger '{}'
 ```
 
-> ★ `map` 上の点へアームを伸ばす「リーチ」は `lekiwi_examples` にあります。
-> `robot.launch.py` には含まれません → [`docs/examples.md`](docs/examples.md)
+> ★ `map` 上の点へアームを伸ばす「リーチ」が `lekiwi_examples` にあります。
 
 ### 8-2. ベース（走行・ナビゲーション）
 
@@ -299,19 +270,14 @@ $E ros2 service call /so101/stow std_srvs/srv/Trigger '{}'
 
 ```bash
 # ナビ目標（アクション。結果が返る）
-$E ros2 action send_goal -f /navigate_to_pose nav2_msgs/action/NavigateToPose \
+ros2 action send_goal -f /navigate_to_pose nav2_msgs/action/NavigateToPose \
   '{pose: {header: {frame_id: map}, pose: {position: {x: 1.0, y: 0.5}, orientation: {w: 1.0}}}}'
 
-# ★ 車輪を浮かせてから。2 秒流す（watchdog が 0.5 秒なので --once では止まる）
-$E ros2 topic pub -r 10 --times 20 /cmd_vel geometry_msgs/msg/Twist '{linear: {x: 0.05}}'
+# ★ 2 秒前進する（watchdog が 0.5 秒なので --once では止まる）
+ros2 topic pub -r 10 --times 20 /cmd_vel geometry_msgs/msg/Twist '{linear: {x: 0.05}}'
 
-$E ros2 lifecycle get /bt_navigator     # active でなければ経路計画も走りません
+ros2 lifecycle get /bt_navigator     # active でなければ経路計画も走りません
 ```
-
-> ★ **`/cmd_vel` を手打ちすると Nav2 の安全機構を全部飛ばします。**
-> 本来は `controller_server → /cmd_vel_nav → velocity_smoother →
-> /cmd_vel_smoothed → collision_monitor → /cmd_vel` の 3 段構えで、
-> 加速度制限も衝突監視もその途中にあります。
 
 ### 8-3. LiDAR（RPLIDAR A1）
 
@@ -321,16 +287,11 @@ $E ros2 lifecycle get /bt_navigator     # active でなければ経路計画も�
 | `/scan_filtered` | Topic `LaserScan` | **前方 ±60° に絞ったもの** |
 
 ```bash
-$E ros2 topic hz /scan
-$E ros2 run tf2_ros tf2_echo base_link laser_link   # 実測 (0.10, 0, 0.03) yaw −7°
+ros2 topic hz /scan
+ros2 run tf2_ros tf2_echo base_link laser_link   # 実測 (0.10, 0, 0.03) yaw −7°
 ```
 
-> ★ **SLAM も costmap も `/scan_filtered` を見ています**（生の `/scan` ではありません）。
-> 360° のままだと自分の後輪とボディが障害物として地図に焼き付くためです。
->
-> ★ `scan_filter` が起動していないと `/scan_filtered` の publisher が 0 になり、
-> **`map → odom` が永遠に出ません。** Nav2 は `Invalid frame ID map` を
-> INFO で吐き続けるのでエラーに見えません。
+> ロボット本体を障害物として認識させないためにフィルタをかけたものが/scan_filteredです。
 
 ### 8-4. RealSense（手首カメラ D435i）
 
@@ -340,17 +301,14 @@ $E ros2 run tf2_ros tf2_echo base_link laser_link   # 実測 (0.10, 0, 0.03) yaw
 | `/wrist_camera/wrist_camera/color/image_raw` | Topic `Image` | カラー画像 |
 
 ```bash
-$E ros2 topic hz /wrist_camera/wrist_camera/depth/color/points
-$E ros2 run tf2_ros tf2_echo map wrist_camera_depth_optical_frame
+ros2 topic hz /wrist_camera/wrist_camera/depth/color/points
+ros2 run tf2_ros tf2_echo map wrist_camera_depth_optical_frame
 ```
 
 > ★ **購読するときは QoS を `BEST_EFFORT` にしてください。** 既定は RELIABLE で、
 > そのままだと**1 通も届きません**（エラーも出ません）。
 >
-> ★ **点群を `map` 上に置くのに較正は要りません。** カメラは URDF で
-> `arm_gripper_link` に剛体固定されているので TF から出ます。
-> ただし**取付姿勢の既定値は未実測**（D405 + 公式ホルダ前提の幾何計算値）
-> なので、絶対位置はまだ信用できません。
+> ★ 取付姿勢の設定が適当なので大きな誤差が残っています。
 >
 > ★ **カメラが動くので、点群を使う側は TF を「メッセージのタイムスタンプ」で
 > 引くこと。** 最新 TF で解決すると腕の動作中に点群がずれます。
@@ -365,8 +323,8 @@ make check
 `/navigate_to_pose` と `follow_joint_trajectory` が**両方**見えれば正常です。
 
 ```bash
-$E ros2 run tf2_ros tf2_echo map base_footprint              # 自己位置
-$E ros2 run tf2_ros tf2_echo base_link arm_gripper_frame_link
+ros2 run tf2_ros tf2_echo map base_footprint              # 自己位置
+ros2 run tf2_ros tf2_echo base_link arm_gripper_frame_link
 #   ★ 全関節ゼロなら (0.471, 0.000, 0.283) になるはず
 ```
 
@@ -425,15 +383,11 @@ cd /app && uv sync
 > ★ **ホスト側で `uv sync` しないでください。** macOS には system の Python 3.12 が
 > 無いので `No interpreter found for Python 3.12` で止まります。
 
-### 編集したあと何をすればよいか
+### ノードを書く。
 
-| 変えたもの | やること |
-| --- | --- |
-| Python / YAML / launch / URDF | **何もしなくていい。** launch を上げ直すだけ（`--symlink-install`） |
-| ファイルを**追加**した | `colcon build --symlink-install --packages-select <pkg>` |
-| パッケージを追加した | `make bootstrap` |
-| `pyproject.toml`（Python の依存） | コンテナ内で `cd /app && uv sync` |
-| `Dockerfile`（apt パッケージ） | `make build` してから `make bootstrap` |
+`<パッケージ名>/<パッケージ名>/`の下にpythonファイルを作成し、ノードの定義を書きましょう。
+
+lekiwi_examples/example_sequence.py, lekiwi_examples/image_saver.pyを参考にしてください。
 
 ### つまずきポイント
 
@@ -443,18 +397,10 @@ cd /app && uv sync
 | `Package '...' not found` | `make bootstrap` を打っていません（`install/` は `.gitignore` 済み） |
 | ビルドしたのに反映されない | `source install/setup.bash` を打ち直す |
 | `ros2 topic echo` に何も出ない | QoS 不一致。センサ系は `qos_profile_sensor_data`、CLI なら `--qos-reliability best_effort` |
-| **画像を扱うノードが Segmentation fault** | **★ `cv_bridge` を使わないこと**（下記） |
+| **画像を扱うノードが Segmentation fault** | **★ `cv_bridge` を使わないこと**。numpyのバージョンの関係で動かない。 |
 | アームが `unconfigured` のまま | 実機の姿勢が URDF の可動域の外です。手で範囲内へ戻す |
 | `colcon build` が `can't copy '...'` | `--symlink-install` の壊れたリンク。`make bootstrap` が検出して直す |
 | RViz に見覚えのないロボットが出る | `ROS_DOMAIN_ID` の衝突。`docker ps` で他スタックが動いていないか見る |
-
-> ★ **`cv_bridge` は使わないこと。** 画像は `image_saver.py` の `imgmsg_to_np()`
-> のように自前で numpy へ整形します（やっているのは `bytes` の reshape だけです）。
->
-> `import` も `CvBridge()` の生成も成功し、**`imgmsg_to_cv2()` を呼んだ瞬間に
-> SIGSEGV** します。`cv_bridge` の C 拡張は apt の numpy 1.26 向けで、
-> このコンテナは lerobot の要求で numpy 2 系を使うためです。
-> `cv_bridge/__init__.py` がその `ImportError` を握り潰すので、import では気付けません。
 
 ---
 

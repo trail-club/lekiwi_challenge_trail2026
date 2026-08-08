@@ -102,10 +102,16 @@ done
 
 `uv sync` 等で cmeel-urdfdom が再インストールされた場合は、上記を再実行してください。
 
-## ★ 較正（EEPROM を書き換える前に必ず控えを取る）
+## ★ 較正（EEPROM を書き換える前に必ずバックアップを取る）
 
-較正値の実体は**サーボの EEPROM** で、lerobot の JSON はその控えにすぎません。
-**書き込みは永続的です。**
+`lerobot-calibrate` は **EEPROM と JSON の両方**に書きます。EEPROM 側は
+`Homing_Offset` / `Min_Position_Limit` / `Max_Position_Limit` で、
+**電源を切っても残ります。**
+
+JSON 側は lerobot の正規化（生カウント ↔ 角度）に使われ、ROS 2 側では
+`calibration_limits.py` が URDF の関節可動域に反映します。
+`SO101Follower.calibrate()` は 2 つが食い違うと **JSON の値をモータへ書き戻す**
+ので、どちらか一方が「正」ということはありません。
 
 ```bash
 # Linux PC（実機）。lerobot_examples/ の中で
