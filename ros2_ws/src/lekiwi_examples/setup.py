@@ -23,8 +23,10 @@ setup(
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
-            # 最小構成の例。アーム -> ナビゲーション -> 手首カメラの保存
+            # 最小構成の例。アームを動かして前へ進む
             "example_sequence = lekiwi_examples.example_sequence:main",
+            # 手首カメラの画像をサービス呼び出しで保存する
+            "image_saver = lekiwi_examples.image_saver:main",
             # map 上の点へアームを伸ばす（RViz の "Publish Point"）
             "reach_to_point = lekiwi_examples.reach_to_point:main",
             # ベースとアームを同時にキーボード操作する

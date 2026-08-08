@@ -1,9 +1,9 @@
-"""最小構成の例。アームを動かし、前へ進み、手首カメラの画像を保存する。
+"""最小構成の例。アームを動かして、前へ進む。
 
     ros2 run lekiwi_examples example_sequence
 
 ★ `robot.launch.py` が動いていることが前提。ハードウェアには直接触らず、
-  ROS のインターフェース（アクションとトピック）だけを使う。
+  ROS のインターフェース（アクションと TF）だけを使う。
 
 順番に次をやる。
 
@@ -11,14 +11,14 @@
     2. アームを上げる
     3. アームを stow へ戻す
     4. 前方 50cm へナビゲーション
-    5. 手首カメラの画像を保存（RGB は PNG、depth はグレースケールの JPG）
 
-★ 画像は**購読しっぱなしで最新の 1 枚だけ持つ**。変換と保存は 5 の
-  タイミングでまとめてやる。撮りたい瞬間に同期を取る必要が無く、
-  「届いていなければ保存しない」も素直に書ける。
+★ **画像の保存はここではやらない。** 別ノードのサービスに分けてある。
 
-★ **`cv_bridge` は使わない。** numpy 2 系では `imgmsg_to_cv2()` が SIGSEGV する
-  （import は通るので気付きにくい）。理由と代替は `docs/development.md`。
+      ros2 run lekiwi_examples image_saver                          # 常駐
+      ros2 service call /image_saver/save std_srvs/srv/Trigger      # 保存
+
+  保存は「撮りたいタイミングで呼ぶ」ものなので、この一直線の手順に混ぜると
+  手順を足すたびに保存の位置を考えることになる。呼ぶ側に判断を残した。
 
 ────────────────────────────────────────────────────────────────────────
 ★ スレッドを使わない
@@ -27,15 +27,14 @@
 **別スレッドで spin しない。** 手順が上から下へ一直線に読め、
 どこで待っているかがコードの見た目と一致する。
 
-その代わり **spin していない間は何も受信しない**。購読とバッファ更新は
-すべて spin の中で進むので、
-
-* TF は `_spin_until()` で `can_transform` になるまで自分で回す
-* 画像も同じく、届くまで回してから保存する
+その代わり **spin していない間は何も受信しない**。TF バッファの更新も
+spin の中でしか進まないので、`_spin_until()` で `can_transform` に
+なるまで自分で回す。
 
 ★ ブロックする API（`ActionClient.send_goal()`、`Buffer.lookup_transform()` の
   `timeout` 付き）は**別スレッドが spin していないと永久に待つ**。
   スレッドを使わないなら、それらを呼んではいけない。
+  例外は `ActionClient.wait_for_server()` で、これはグラフを直接見る。
 
 ────────────────────────────────────────────────────────────────────────
 ★ 安全上の注意
@@ -51,10 +50,7 @@ from __future__ import annotations
 
 import math
 import time
-from pathlib import Path
 
-import cv2
-import numpy as np
 import rclpy
 from action_msgs.msg import GoalStatus
 from builtin_interfaces.msg import Duration
@@ -64,8 +60,6 @@ from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import Image
 from tf2_ros import Buffer, TransformListener
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
@@ -87,45 +81,16 @@ STOW = (0.0322, -1.7253, 1.5200, -1.5800, 1.3709)
 #   手先はおよそ (0.067, 0.000, 0.429) [m] で、ほぼ真上を向く。
 RAISED = (0.0, -0.2570, -1.2900, 0.0, 0.0)
 
-# sensor_msgs/Image のエンコーディング -> (numpy 型, チャンネル数)
-ENCODINGS = {
-    "bgr8": (np.uint8, 3),
-    "rgb8": (np.uint8, 3),
-    "mono8": (np.uint8, 1),
-    "mono16": (np.uint16, 1),
-    "16UC1": (np.uint16, 1),
-    "32FC1": (np.float32, 1),
-}
-
-
-def imgmsg_to_np(message: Image) -> np.ndarray:
-    """sensor_msgs/Image -> numpy（OpenCV と同じ BGR 並び）。
-
-    ★ `cv_bridge` の代わり。やっていることはエンコーディングを見て
-      `bytes` を numpy へ整形するだけなので、依存なしで書ける。
-    """
-    dtype, channels = ENCODINGS[message.encoding]
-    array = np.frombuffer(message.data, dtype=dtype)
-    if channels > 1:
-        array = array.reshape(message.height, message.width, channels)
-    else:
-        array = array.reshape(message.height, message.width)
-    # cv2 は BGR を期待する。rgb8 のときだけ入れ替える。
-    return array[..., ::-1] if message.encoding == "rgb8" else array
-
 
 class ExampleSequence(Node):
     def __init__(self) -> None:
         super().__init__("example_sequence")
 
         defaults = {
-            "output_dir": "/captured_images",
             "forward_distance": 0.5,
             # ナビゲーション目標を置くフレーム。Nav2 の大域フレームに合わせる。
             "global_frame": "map",
             "move_seconds": 4.0,
-            "color_topic": "/wrist_camera/wrist_camera/color/image_raw",
-            "depth_topic": "/wrist_camera/wrist_camera/depth/image_rect_raw",
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -133,7 +98,6 @@ class ExampleSequence(Node):
         def param(name):
             return self.get_parameter(name).value
 
-        self._output = Path(str(param("output_dir")))
         self._distance = float(param("forward_distance"))
         self._frame = str(param("global_frame"))
         self._seconds = float(param("move_seconds"))
@@ -147,19 +111,6 @@ class ExampleSequence(Node):
             "/joint_trajectory_controller/follow_joint_trajectory",
         )
         self._nav = ActionClient(self, NavigateToPose, "/navigate_to_pose")
-
-        # ★ 最新の 1 枚だけ持つ。保存は最後にまとめてやる。
-        self._color: Image | None = None
-        self._depth: Image | None = None
-        # ★ SENSOR_DATA (BEST_EFFORT)。publisher が RELIABLE でも繋がる。
-        self.create_subscription(
-            Image, str(param("color_topic")),
-            lambda m: setattr(self, "_color", m), qos_profile_sensor_data,
-        )
-        self.create_subscription(
-            Image, str(param("depth_topic")),
-            lambda m: setattr(self, "_depth", m), qos_profile_sensor_data,
-        )
 
     # ── 待つ（spin は全部ここに集める）──────────────────────────────
 
@@ -225,15 +176,6 @@ class ExampleSequence(Node):
         if not self._nav.wait_for_server(timeout_sec=10.0):
             raise RuntimeError("Nav2 のアクションサーバが居ない")
 
-        # ★ 目標は**固定フレーム（map）で自分で計算する**。
-        #   `frame_id: base_link` に「前へ 0.5m」と書いてはいけない。
-        #   目標が自分に付いて回るので Nav2 が収束しない。同じ 0.5m を
-        #   モックで比べた実測:
-        #       base_link 指定 -> ABORTED  224 秒で 0.123m しか進まない
-        #       map で自前計算 -> SUCCEEDED
-        #
-        #   なお `xy_goal_tolerance: 0.12`（nav2.yaml）なので、
-        #   **目標ちょうどには止まらない**。0.5m 指令に対し実測 0.37〜0.39m。
         # ★ `lookup_transform(..., timeout=...)` は使わない。あれは内部で
         #   sleep して待つだけなので、別スレッドが spin していないと
         #   バッファが埋まらず必ずタイムアウトする。自分で回して待つ。
@@ -250,6 +192,15 @@ class ExampleSequence(Node):
             1.0 - 2.0 * (rotation.y ** 2 + rotation.z ** 2),
         )
 
+        # ★ 目標は**固定フレーム（map）で自分で計算する**。
+        #   `frame_id: base_link` に「前へ 0.5m」と書いてはいけない。
+        #   目標が自分に付いて回るので Nav2 が収束しない。同じ 0.5m を
+        #   モックで比べた実測:
+        #       base_link 指定 -> ABORTED  224 秒で 0.123m しか進まない
+        #       map で自前計算 -> SUCCEEDED
+        #
+        #   なお `xy_goal_tolerance: 0.12`（nav2.yaml）なので、
+        #   **目標ちょうどには止まらない**。0.5m 指令に対し実測 0.37〜0.39m。
         goal = NavigateToPose.Goal()
         goal.pose = PoseStamped()
         goal.pose.header.frame_id = self._frame
@@ -266,31 +217,6 @@ class ExampleSequence(Node):
         if result.status != GoalStatus.STATUS_SUCCEEDED:
             raise RuntimeError(f"ナビゲーションが失敗: status={result.status}")
 
-    # ── 5. 画像 ──────────────────────────────────────────────────────
-
-    def save_images(self) -> None:
-        # ここまでの spin で届いているはずだが、届いていなければ待つ。
-        self._spin_until(
-            lambda: self._color is not None and self._depth is not None,
-            "手首カメラの画像",
-        )
-        self._output.mkdir(parents=True, exist_ok=True)
-
-        color = imgmsg_to_np(self._color)
-        # ★ depth は 16UC1 [mm]（0 は無効値）。そのままでは真っ黒なので
-        #   最小-最大で 0-255 へ引き伸ばしてグレースケールにする。
-        depth = cv2.normalize(
-            imgmsg_to_np(self._depth), None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U
-        )
-
-        for path, image in (
-            (self._output / "example_rgb.png", color),
-            (self._output / "example_depth.jpg", depth),
-        ):
-            if not cv2.imwrite(str(path), image):
-                raise RuntimeError(f"保存に失敗: {path}")
-            self.get_logger().info(f"保存: {path} {image.shape}")
-
 
 def main() -> None:
     rclpy.init()
@@ -302,7 +228,6 @@ def main() -> None:
         node.move_arm(RAISED, "上げる")
         node.move_arm(STOW, "stow")
         node.move_forward()
-        node.save_images()
         node.get_logger().info("完了")
     except (KeyboardInterrupt, ExternalShutdownException):
         pass

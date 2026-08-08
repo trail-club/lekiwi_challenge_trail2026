@@ -43,32 +43,34 @@ cd docker/robot && make shell
 
 ### 1. 最小構成の例 — まずこれを読む
 
+**上から下へ一直線に動かす例**と、**呼ばれた瞬間に保存するサービス**の
+2 本に分かれています。役割が違うので分けてあります。
+
+| | いつ動くか | 形 |
+| --- | --- | --- |
+| `example_sequence` | 起動から終了まで一度だけ | 手順を上から順に実行して終わる |
+| `image_saver` | **呼ばれたとき** | 常駐してサービスを待つ |
+
+#### 1-1. `example_sequence` — アームを動かして前へ進む
+
 ```bash
 # コンテナ内
 ros2 run lekiwi_examples example_sequence
 ```
 
-アーム・ナビゲーション・カメラを**ひととおり 1 ファイルで**触ります。
-
 1. アームを stow（収納）へ
 2. アームを上げる
 3. アームを stow へ戻す
 4. 前方 50cm へナビゲーション
-5. 手首カメラの画像を保存
-
-保存先は `captured_images/example_rgb.png` と `example_depth.jpg`
-（`docker/robot/compose.yaml` が `/captured_images` にマウントしています）。
 
 > ★ **車輪を浮かせるか、前方 1m を空けてください。** 4 で実際に走ります。
 > アームは可動域の内側ですが**干渉チェックはありません**。
 
-読みどころは 3 つです。
+読みどころは 2 つです。
 
 | 論点 | 中身 |
 | --- | --- |
 | **スレッドを使わない** | アクションは `send_goal_async()` + `spin_until_future_complete()` で待ちます。手順が上から下へ一直線に読め、どこで待っているかがコードと一致します |
-| **`cv_bridge` を使わない** | numpy 2 で `imgmsg_to_cv2()` が SIGSEGV します（import は通るので気付きにくい）。`imgmsg_to_np()` を自前で持っています → [`docs/development.md`](../../../docs/development.md) |
-| **画像は購読しっぱなし** | 最新の 1 枚だけ持ち、変換と保存は最後にまとめてやります。撮りたい瞬間に同期を取らずに済みます |
 | **ナビ目標は固定フレームで自分で計算** | `frame_id: base_link` に「前へ 0.5m」と書くと**目標が自分に付いて回り**、Nav2 が収束しません。モック実測で ABORTED（224 秒で 0.123m）。`map` で計算すれば SUCCEEDED |
 
 > ## ★ スレッドを使わないなら、ブロックする API を呼んではいけない
@@ -87,6 +89,39 @@ ros2 run lekiwi_examples example_sequence
 
 > ★ `nav2.yaml` の `xy_goal_tolerance: 0.12` があるので、
 > **50cm ちょうどには止まりません**（モック実測で 0.39m）。
+
+#### 1-2. `image_saver` — 呼ばれた瞬間に手首カメラの画像を保存する
+
+```bash
+# 端末 A（コンテナ内）: 常駐させる
+ros2 run lekiwi_examples image_saver
+
+# 端末 B（コンテナ内）: 保存したいタイミングで叩く
+ros2 service call /image_saver/save std_srvs/srv/Trigger
+```
+
+保存先は `captured_images/example_rgb.png` と `example_depth.jpg`
+（`docker/robot/compose.yaml` が `/captured_images` にマウントしています）。
+depth は 16UC1 [mm] を 0-255 へ正規化したグレースケールです。
+
+読みどころは 2 つです。
+
+| 論点 | 中身 |
+| --- | --- |
+| **画像は購読しっぱなし** | 最新の 1 枚だけ持ち、変換と保存はサービスが呼ばれた瞬間にやります。撮りたい瞬間にカメラと同期を取らずに済みます |
+| **`cv_bridge` を使わない** | numpy 2 で `imgmsg_to_cv2()` が SIGSEGV します（import は通るので気付きにくい）。`imgmsg_to_np()` を自前で持っています → [`docs/development.md`](../../../docs/development.md) |
+
+1 枚も届いていなければ `success=False` と理由を返します。**古い画像や
+壊れた画像を黙って書きません。**
+
+```
+success: false
+message: color の画像がまだ 1 枚も届いていない
+```
+
+> ★ depth は `align_depth` の既定が `false` なので **RGB と画角がずれます**。
+> 揃えたいなら realsense を `align_depth:=true` で起動し、
+> `depth_topic` を `aligned_depth_to_color/image_raw` にしてください。
 
 ### 2. リーチ — `map` 上の点へアームを伸ばす
 
@@ -219,7 +254,8 @@ ros2 launch lekiwi_examples cartesian_teleop.launch.py
 | `cartesian_math.py` | 順運動学・ヤコビアン・**減衰最小二乗（DLS）**。ROS に依存しない |
 | `reach_solver.py` | DLS を**指令の前にオフラインで収束**させる。到達不能の判定 |
 | `reach_to_point.py` | リーチのノード。TF の鮮度チェック、ベース移動の監視、`/so101/stow` |
-| `example_sequence.py` | **最小構成の例。** アーム -> ナビゲーション -> 画像の保存 |
+| `example_sequence.py` | **最小構成の例。** アームを動かして前へ進む（一直線に実行して終わる） |
+| `image_saver.py` | **最小構成の例。** 手首カメラの画像をサービス呼び出しで保存（常駐） |
 | `teleop_keyboard.py` | ベース + アームのキーボード操作 |
 | `cartesian_jog.py` + `keyboard_input.py` | デカルト座標のジョグ（2 ノードで 1 組） |
 
