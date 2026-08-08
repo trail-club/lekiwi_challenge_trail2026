@@ -22,7 +22,7 @@ setup(
     maintainer_email="maintainer@example.com",
     description="LeRobot-backed ROS 2 bringup for the standalone SO-101 follower arm.",
     license="Apache-2.0",
-    tests_require=["pytest"],
+    extras_require={"test": ["pytest"]},
     entry_points={
         "console_scripts": [
             # ★ ここはハードウェアに触るものだけ。逆運動学・リーチ・

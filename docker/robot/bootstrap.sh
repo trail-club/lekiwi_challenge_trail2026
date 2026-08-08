@@ -17,6 +17,10 @@ set -eo pipefail
 
 # ROS の setup.bash は未定義変数を参照するので set -u とは併用できない
 # (AMENT_TRACE_SETUP_FILES: unbound variable になる)。
+# entrypoint が先に古いワークスペースを source している場合、削除済みの
+# install パスが AMENT_PREFIX_PATH/CMAKE_PREFIX_PATH に残って colcon の警告になる。
+# bootstrap はROS本体から環境を作り直す。
+unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH
 source /opt/ros/jazzy/setup.bash
 
 # ── Python の環境 (uv) ────────────────────────────────────────────────
