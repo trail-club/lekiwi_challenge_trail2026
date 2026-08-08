@@ -1,17 +1,14 @@
 # trail_SO101
 
 **LeKiwi 移動ベースに SO-101 アームを載せた実機ロボット**を、ROS 2 Jazzy と
-lerobot で動かすリポジトリです。SLAM で地図を作り、Nav2 で走り、
-`map` 上の点へアームを伸ばします。
-
-このドキュメントは**上から順にやれば動く手順書**です。深い話は別ファイルに送ります。
+lerobot で動かすリポジトリです。
 
 ## 目次
 
 1. [リポジトリを取得する](#1-リポジトリを取得する)
 2. [Docker イメージをビルドする](#2-docker-イメージをビルドする)（初回のみ・時間がかかります）
 3. [ワークスペースを初期化する](#3-ワークスペースを初期化する)（初回とパッケージ追加時）
-4. [起動する](#4-起動する)（★ 安全上の注意）
+4. [起動方法](#4-起動方法)（★ 安全上の注意）
 5. [RViz で動かす](#5-rviz-で動かす)
 6. [サブシステム別の Topic / Service / Action](#6-サブシステム別の-topic--service--action)
 7. [自分でノードを書く](#7-自分でノードを書く)
@@ -94,7 +91,7 @@ make bootstrap
 
 ---
 
-## 4. 起動する
+## 4. 起動方法
 
 > ## ★ サーボのトルクの切り替えについて
 >
@@ -102,136 +99,55 @@ make bootstrap
 > 
 > トルクがOFFになるとアームは姿勢を保てず落ちることに注意してください。
 
-```bash
-cd docker/robot
-make run BACKEND=lerobot ROBOT_ID=my_follower
-```
-
-### ★ コンテナは `bash` を起動するだけ
-
-`make run` は 2 段階です。**コンテナ側では何も動きません。launch は
-その中で人が叩きます。**
+よく使うコマンドはMakefileにまとめられています。
 
 ```bash
-docker compose up -d                    # ① コンテナが上がる（bash が待つだけ）
-
-docker compose exec -it robot /entrypoint.sh \
-  ros2 launch lekiwi_so101_bringup robot.launch.py \
-    backend:=lerobot robot_id:=my_follower    # ② launch を前面で走らせる
+make up # コンテナが立ち上がる
+make shell # コンテナの中のシェルへ移動
 ```
 
-`compose.yaml` の `command:` は `["bash"]` で、launch は書いていません。理由は 2 つです。
+コンテナの中で
+```bash
+ros2 launch lekiwi_so101_bringup robot.launch.py \
+    backend:=lerobot robot_id:=my_follower
+```
 
-1. **`docker compose up -d` でロボットが動き出さないようにするため。**
-   launch を `command:` に書くと、**コンテナを上げた瞬間にトルクが入り**、
-   ノードが全部走り出します。いつ動かすかは人が決めるべきです。
-2. **起動のたびに引数を変えるため。** `backend` / `robot_id` / `sim` /
-   `use_saved_map` は毎回違います。`command:` に書くと compose の編集が要ります。
-
-> ## ★★ 代償: `make down` だけでは止まりません
->
-> `docker compose down` が SIGTERM を送るのは**コンテナの PID 1 だけ**です。
-> `exec` で起動したプロセス（＝ launch）には**届きません**。
-> launch は SIGKILL され、**トルクが入ったまま残ります**（アームは凍り、
-> ホイールは最後の指令速度で回り続けます）。
->
-> ```
-> docker compose down で SIGTERM が届くか（実測）
->   PID 1（compose の command:）  → 届く
->   exec したプロセス（launch）   → 届かない。SIGKILL される
-> ```
->
-> **必ず launch の端末で `Ctrl+C` してから `make down` してください。**
-> 順番を逆にしてしまったときの復帰は `make release`（後述）。
-
-引数を変えたいときは ② を直接叩いてください（`make run` が渡すのは
-`backend` / `robot_id` / `start_rviz` と 3 つのポートだけです）。
-`sim` や `use_saved_map` などは ② で指定します。
-
-`ROBOT_ID` は LeRobot の較正 ID です。実物はここで確認できます。
+`robot_id` は LeRobot の較正 ID です。実物はここで確認できます。
 
 ```bash
 ls ~/.cache/huggingface/lerobot/calibration/robots/so_follower/
 ```
 
-RViz が上がります。別ターミナルで健全性を確認してください。
+### 終了方法
+
+launchをctrl + cで終了。（トルクが落ちることに注意）
+
+コンテナを閉じる場合は
 
 ```bash
-cd docker/robot
-make check
-```
-
-`/robot_description` = **1**、`/joint_states` = **2**、コントローラ 3 つが `active`、
-`/navigate_to_pose` と `follow_joint_trajectory` が**両方**見えれば正常です。
-
-> ★ 実機が無い環境（Mac など）では `make mock` で同じ launch を
-> `sim:=true backend:=mock` で起動できます。シリアルも USB も開きません。
-> ROS グラフ・TF・SLAM/Nav2 はそのまま検証できます。リーチも実機と同じく
-> `reach.launch.py` を足せば動きます。
-
-### 停止手順（★ 順番を守ること）
-
-```bash
-# ① 別ターミナル
-cd docker/robot && make stow      # アームを低く畳む
-
-# ② 人がアームを支える
-
-# ③ make run の端末で Ctrl+C     ← ここでトルクが切れる
-
-# ④ アームが静止してから手を放す
-
-# ⑤ コンテナを片付ける
 make down
 ```
 
 ### 異常終了したとき（launch が落ちた / SIGKILL / OOM）
 
-停止処理が走らなかった場合、**サーボは指令を保持したままです。**
-**★ コンテナを落とす必要はありません。** 止まっている必要があるのは launch だけです。
+以下のコマンドでサーボのトルクを落とします。
+
+robot.launchが実行中だと失敗することに注意してください。
 
 ```bash
-cd docker/robot
-make release-check    # 読むだけ。いまトルクが入っているか確認
-make release          # ★ アームもホイールもこれ 1 つで解放（★ アームが落ちます）
-make release-wheels   # ホイールだけ止める（アームは落ちない）
+make release
 ```
-
-> ★ launch がまだ生きている場合は、**どのプロセスがポートを掴んでいるかを
-> 名指しして中止します**。その場合は先に launch を `Ctrl+C` してください。
-
-詳細は [`docker/robot/README.md`](docker/robot/README.md)。
 
 ---
 
 ## 5. RViz で動かす
 
-**いちばん簡単な入口です。** `make run` で RViz が一緒に上がります
-（設定は `lekiwi_so101_bringup/rviz/reach.rviz`）。
-
-> ★ **Fixed Frame は `map` にしてください。** ツールは Fixed Frame の座標で
-> publish するので、`odom` のままだとリーチが `REJECTED_WRONG_FRAME` で弾かれます。
-> 既定は `map` です。
-
-> ★ **"Publish Point" を使うにはリーチのノードを別に起動します。**
-> `robot.launch.py` が起動するのはロボット本体（アーム・ベース・LiDAR・カメラ）
-> までで、リーチは含みません。別ターミナルで:
->
-> ```bash
-> cd docker/robot && make shell
-> ros2 launch lekiwi_examples reach.launch.py
-> ```
-
 ### ツール（上部のツールバー）
 
 | ツール | 出すもの | 何が起きるか |
 | --- | --- | --- |
-| **Publish Point** | `/clicked_point` | **クリックした点へアームを伸ばす**。シングルクリックで発火 |
 | **2D Goal Pose** | `/goal_pose` | **その姿勢へ走る**（Nav2） |
 | **2D Pose Estimate** | `/initialpose` | AMCL の初期姿勢。★ **保存地図構成（`use_saved_map:=true`）のときだけ**意味があります |
-
-> ★ **"Publish Point" と "2D Goal Pose" は別物です。** 前者は `PointStamped`、
-> 後者は `PoseStamped` で、型も宛先も違います。アームを動かすのは前者です。
 
 ### 表示（Displays パネル）
 
@@ -252,29 +168,6 @@ make release-wheels   # ホイールだけ止める（アームは落ちない�
 > ★ **Wrist Camera Cloud は既定 OFF です。** `realsense2_camera` は購読者が
 > ゼロなら点群の生成自体をスキップするので、切っている間はコストがゼロです。
 > 見たいときだけ ON にしてください。
->
-> ★ 点群は Fixed Frame が `map` なので**自動的に `map` 上の正しい位置に出ます**。
-> カメラは URDF で `arm_gripper_link` に剛体固定されており、外部キャリブレーションは
-> 要りません。
-
-### リーチの結果を見る
-
-RViz には目標球しか出ません。**理由まで知りたいときは端末で流してください。**
-
-```bash
-docker compose -f compose.yaml exec robot /entrypoint.sh \
-  ros2 topic echo /so101/reach_status
-```
-
-```
-ACCEPTED   target=map(0.350,0.050,0.250) ... residual=0.0042
-SUCCEEDED  residual_fk=0.0042
-REJECTED_OUT_OF_RANGE range=1.963m > max_reach_radius=0.55m
-```
-
-状態コードの一覧は [`docs/interfaces.md`](docs/interfaces.md#リーチの状態メッセージ)。
-
----
 
 ## 6. サブシステム別の Topic / Service / Action
 
@@ -310,7 +203,7 @@ $E ros2 service call /so101/stow std_srvs/srv/Trigger '{}'
 ```
 
 > ★ 上 4 つ（`/clicked_point` と `/so101/reach_*`）を扱うのは `lekiwi_examples`
-> のリーチノードです。`robot.launch.py` には含まれないので、
+> のリーチノードです。`robot.launch.py` には含まれないので、コンテナの中で
 > `ros2 launch lekiwi_examples reach.launch.py` を別に起動してください。
 >
 > ★ **届かない目標は「警告して何もしない」**のが仕様です。ベースは動きません。
@@ -408,16 +301,6 @@ ros2 run my_first_pkg hello
 ノードの書き方、QoS の罠、テストの書き方、つまずきポイント集は
 **[`docs/development.md`](docs/development.md)** にまとめてあります。
 
-**動くサンプルは [`ros2_ws/src/lekiwi_examples/`](ros2_ws/src/lekiwi_examples/)**
-にあります（リーチ / 逆運動学 / キーボード操作）。自分のプログラムもここに
-置いてください。
-
-```bash
-# コンテナ内。ロボットが起動している状態で
-ros2 launch lekiwi_examples reach.launch.py      # map 上の点へリーチ
-ros2 run lekiwi_examples teleop_keyboard         # ベース + アームをキーボードで
-```
-
 ---
 
 ## この機体の構成
@@ -466,7 +349,7 @@ trail_SO101/
 │   ├── rplidar_ros2/
 │   └── realsense_ros2/
 ├── ros2_ws/src/
-│   ├── lekiwi_examples/        ★ ロボットの上で動くもの。リーチ、IK、キーボード操作
+│   ├── lekiwi_examples/        ロボットの上で動くもの。リーチ、逆運動学、キーボード操作
 │   ├── so101_bringup/          アーム。LeRobot ブリッジ、較正（ハードウェアに触る側）
 │   ├── lekiwi_base_bringup/    ベース。ドライバ、オドメトリ、スキャン処理
 │   ├── lekiwi_so101_bringup/   合成のみ。結合 URDF、robot.launch.py、release_all
