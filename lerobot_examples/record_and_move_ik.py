@@ -37,7 +37,7 @@ from lerobot.teleoperators.so_leader import SO101Leader, SO101LeaderConfig
 # --- 設定 -------------------------------------------------------------------
 # config.toml はこのスクリプトと同じディレクトリの config.toml が既定。
 DEFAULT_CONFIG_PATH = Path(__file__).with_name("config.toml")
-# URDF の相対パスはリポジトリのルート（examples/ の一つ上）基準で解決する。
+# URDF の相対パスはリポジトリのルート（lerobot_examples/ の一つ上）基準で解決する。
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # SO101 のモーター構成。IK で解くアーム関節（gripper を除く 5 自由度）と、配列の並び順。
@@ -74,7 +74,7 @@ def load_config(path: Path) -> dict:
 
 def build_kinematics(kin_cfg: dict) -> RobotKinematics:
     """config の [kinematics] から RobotKinematics を構築する。"""
-    urdf_path = Path(kin_cfg.get("urdf_path", "examples/SO101/so101_new_calib.urdf"))
+    urdf_path = Path(kin_cfg.get("urdf_path", "lerobot_examples/SO101/so101_new_calib.urdf"))
     if not urdf_path.is_absolute():
         urdf_path = REPO_ROOT / urdf_path
     if not urdf_path.exists():

@@ -1,7 +1,7 @@
 # アームなし・ホイール3個(ID 7,8,9)だけの LeKiwi ベースをキーボードで直接操縦する。
 # host/client 構成は使わず、シリアルバスに直接速度指令を送る。
 #
-#   uv run python examples/lekiwi_base_keyboard.py
+#   uv run python lekiwi_base_keyboard.py
 #
 # 操作: W/S 前後, A/D 左右, Z/X 旋回, R/F 速度段階, Q または Ctrl+C 終了
 # 注意: 12V 給電中はアーム(7.4V版)を絶対にバスへ再接続しないこと。

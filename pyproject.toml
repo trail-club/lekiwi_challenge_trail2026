@@ -4,8 +4,8 @@
 #   bind mount するので、コンテナからは /app/.venv として見える。
 #   **中身は Linux のバイナリ**（コンテナ内で uv sync して作る）。
 #
-# ★ ROS 2 を使わない lerobot 直叩きは examples/ に分けてある。
-#   あちらは examples/pyproject.toml + examples/.venv で、**ホストの Mac /
+# ★ ROS 2 を使わない lerobot 直叩きは lerobot_examples/ に分けてある。
+#   あちらは lerobot_examples/pyproject.toml + lerobot_examples/.venv で、**ホストの Mac /
 #   Linux で直接動かす**もの。この環境とは共有しない
 #   （バイナリの OS が違うので共有できない）。
 #

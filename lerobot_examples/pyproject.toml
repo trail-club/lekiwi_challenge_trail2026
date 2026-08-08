@@ -2,9 +2,9 @@
 #
 #   ここのスクリプト（record_and_move.py / lekiwi_teleoperate.py …）は
 #   Docker も ROS 2 も使わず、lerobot から SO-101 を直接叩く。
-#   使い方は docs/lerobot_examples.md。
+#   使い方は同じディレクトリの README.md。
 #
-#     cd examples && uv sync && uv run python record_and_move.py
+#     cd lerobot_examples && uv sync && uv run python record_and_move.py
 #
 # ★ リポジトリルートの pyproject.toml とは**別物**。あちらは ROS 2 開発用で、
 #   venv はコンテナの中（Linux バイナリ）に作る。こちらはホストの Mac /
@@ -13,7 +13,7 @@
 # ★ placo はここだけで使う（IK のサンプル用）。ROS 2 側の逆運動学は
 #   ros2_ws/src/lekiwi_examples/cartesian_math.py の自前実装で、placo は不要。
 #   macOS では placo がリンクする liburdfdom の扱いに手当てが要る
-#   （docs/lerobot_examples.md 参照）。
+#   （README.md 参照）。
 
 [project]
 name = "trail-so101-examples"

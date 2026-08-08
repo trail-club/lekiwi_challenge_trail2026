@@ -1,9 +1,9 @@
 """LeKiwi 3輪オムニベースの運動学。
 
-``examples/lekiwi_base_keyboard.py`` (実機検証済み) からの移植で、計算内容は
+``lerobot_examples/lekiwi_base_keyboard.py`` (実機検証済み) からの移植で、計算内容は
 lerobot の ``LeKiwi._body_to_wheel_raw`` と同一。
 
-``.dockerignore`` が ``examples/`` を除外しているためコンテナ内から import
+``.dockerignore`` が ``lerobot_examples/`` を除外しているためコンテナ内から import
 できない。意図的な複製である。
 
 行の順序は全体を通して **left(ID 7), back(ID 8), right(ID 9)** で統一する。

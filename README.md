@@ -7,11 +7,13 @@ lerobot で動かすリポジトリです。
 
 1. [リポジトリを取得する](#1-リポジトリを取得する)
 2. [Docker イメージをビルドする](#2-docker-イメージをビルドする)（初回のみ・時間がかかります）
-3. [ワークスペースを初期化する](#3-ワークスペースを初期化する)（初回とパッケージ追加時）
-4. [起動方法](#4-起動方法)（★ 安全上の注意）
-5. [RViz で動かす](#5-rviz-で動かす)
-6. [サブシステム別の Topic / Service / Action](#6-サブシステム別の-topic--service--action)
-7. [自分でノードを書く](#7-自分でノードを書く)
+3. [udev ルールを入れる](#3-udev-ルールを入れる-linux-のみ初回のみ)（★ Linux のみ・初回のみ）
+4. [アームを較正する](#4-アームを較正する-linux-のみ初回のみ)（★ Linux のみ・初回のみ）
+5. [ワークスペースを初期化する](#5-ワークスペースを初期化する)（初回とパッケージ追加時）
+6. [起動方法](#6-起動方法)（★ 安全上の注意）
+7. [RViz で動かす](#7-rviz-で動かす)
+8. [サブシステム別の Topic / Service / Action](#8-サブシステム別の-topic--service--action)
+9. [自分でノードを書く](#9-自分でノードを書く)
 
 - [この機体の構成](#この機体の構成)
 - [リポジトリ構成](#リポジトリ構成)
@@ -38,9 +40,11 @@ cd docker/robot
 make build
 ```
 
-ビルドを待つ間に、下の 2 つを済ませます（どちらも初回のみ）。
+ビルドを待つ間に、3 章と 4 章を済ませておけます。
 
-### udev ルールを入れる（★ Linux のみ）
+---
+
+## 3. udev ルールを入れる（★ Linux のみ・初回のみ）
 
 シリアル 3 本に固定名（`/dev/lekiwi` `/dev/so101_follower` `/dev/rplidar`）を
 付けます。ルールは `SYMLINK+=` で `/dev/<名前>` を作り、`GROUP:="dialout"` を
@@ -75,7 +79,7 @@ done
 **③ 入れて反映する**
 
 ```bash
-cd ../..          # リポジトリ直下へ戻る
+# リポジトリ直下で
 sudo cp docker/lekiwi_base_ros2/99-lekiwi.rules /etc/udev/rules.d/
 sudo cp docker/so101_ros2/99-so101.rules        /etc/udev/rules.d/
 sudo cp docker/rplidar_ros2/99-rplidar.rules    /etc/udev/rules.d/
@@ -91,8 +95,7 @@ ls -l /dev/lekiwi /dev/so101_follower /dev/rplidar
 ### `.env` を用意する
 
 ```bash
-cd docker/robot
-cp .env.example .env
+cp docker/robot/.env.example docker/robot/.env
 getent group dialout        # 出力の 3 番目の数字が DIALOUT_GID（Ubuntu なら 20）
 ```
 
@@ -101,7 +104,54 @@ getent group dialout        # 出力の 3 番目の数字が DIALOUT_GID（Ubunt
 
 ---
 
-## 3. ワークスペースを初期化する
+## 4. アームを較正する（★ Linux のみ・初回のみ）
+
+較正しないとアームは正しい角度で動きません。**ROS 2 とは別系統**で、
+`lerobot_examples/` の lerobot から実行します（Docker は使いません）。
+
+```bash
+sudo apt-get install -y ffmpeg       # lerobot が要求する（Mac は brew install ffmpeg）
+
+# リポジトリ直下で
+cd lerobot_examples
+uv sync                              # ★ 初回のみ。lerobot を入れる
+uv run lerobot-find-port             # /dev/so101_follower が出るか確認
+
+uv run lerobot-calibrate \
+  --robot.type=so101_follower \
+  --robot.port=/dev/so101_follower \
+  --robot.id=my_follower
+```
+
+画面の指示に従って各関節を可動域の端まで動かします。終わるとここに JSON が
+できます。**`--robot.id` に与えた名前がファイル名**になり、起動時の
+`robot_id`（6 章）になります。
+
+```bash
+ls ~/.cache/huggingface/lerobot/calibration/robots/so_follower/
+#    -> my_follower.json
+```
+
+> ★ **較正値の実体はサーボの EEPROM で、この JSON は控えです。書き込みは
+> 永続的です。** 較正し直す前に必ずバックアップを取ってください。
+>
+> ```bash
+> cp -a ~/.cache/huggingface/lerobot/calibration/robots/so_follower \
+>       ~/so_follower_backup_$(date +%Y%m%d_%H%M)
+> ```
+>
+> ★ **ROS を止めた状態で実行してください。** Feetech のバスはマスタが 1 つしか
+> 居られないので、`robot.launch.py` が動いていると失敗します。
+>
+> ★ JSON は**較正した PC のホームにしか存在しません。** `compose.yaml` が
+> このディレクトリを読み取り専用でコンテナへ渡します。
+
+`lerobot_examples/` でできることは他にもあります
+→ [`lerobot_examples/README.md`](lerobot_examples/README.md)
+
+---
+
+## 5. ワークスペースを初期化する
 
 ```bash
 cd docker/robot
@@ -123,7 +173,7 @@ make bootstrap
 
 ---
 
-## 4. 起動方法
+## 6. 起動方法
 
 > ## ★ サーボのトルクの切り替えについて
 >
@@ -144,11 +194,7 @@ ros2 launch lekiwi_so101_bringup robot.launch.py \
     backend:=lerobot robot_id:=my_follower
 ```
 
-`robot_id` は LeRobot の較正 ID です。実物はここで確認できます。
-
-```bash
-ls ~/.cache/huggingface/lerobot/calibration/robots/so_follower/
-```
+`robot_id` は 4 章の `--robot.id` に与えた名前です。
 
 ### 終了方法
 
@@ -172,7 +218,7 @@ make release
 
 ---
 
-## 5. RViz で動かす
+## 7. RViz で動かす
 
 ### ツール（上部のツールバー）
 
@@ -201,7 +247,7 @@ make release
 > ゼロなら点群の生成自体をスキップするので、切っている間はコストがゼロです。
 > 見たいときだけ ON にしてください。
 
-## 6. サブシステム別の Topic / Service / Action
+## 8. サブシステム別の Topic / Service / Action
 
 **よく使うものだけ**を挙げます。全部を見るなら `ros2 topic list -t` /
 `ros2 action list -t` / `ros2 service list -t` が確実です。
@@ -212,7 +258,7 @@ make release
 E="docker compose -f docker/robot/compose.yaml exec robot /entrypoint.sh"
 ```
 
-### 6-1. アーム（SO-101）
+### 8-1. アーム（SO-101）
 
 | 名前 | 種別 | 用途 |
 | --- | --- | --- |
@@ -237,7 +283,7 @@ $E ros2 service call /so101/stow std_srvs/srv/Trigger '{}'
 > ★ `map` 上の点へアームを伸ばす「リーチ」は `lekiwi_examples` にあります。
 > `robot.launch.py` には含まれません → [`docs/examples.md`](docs/examples.md)
 
-### 6-2. ベース（走行・ナビゲーション）
+### 8-2. ベース（走行・ナビゲーション）
 
 | 名前 | 種別 | 用途 |
 | --- | --- | --- |
@@ -267,7 +313,7 @@ $E ros2 lifecycle get /bt_navigator     # active でなければ経路計画も�
 > /cmd_vel_smoothed → collision_monitor → /cmd_vel` の 3 段構えで、
 > 加速度制限も衝突監視もその途中にあります。
 
-### 6-3. LiDAR（RPLIDAR A1）
+### 8-3. LiDAR（RPLIDAR A1）
 
 | 名前 | 種別 | 用途 |
 | --- | --- | --- |
@@ -286,7 +332,7 @@ $E ros2 run tf2_ros tf2_echo base_link laser_link   # 実測 (0.10, 0, 0.03) yaw
 > **`map → odom` が永遠に出ません。** Nav2 は `Invalid frame ID map` を
 > INFO で吐き続けるのでエラーに見えません。
 
-### 6-4. RealSense（手首カメラ D435i）
+### 8-4. RealSense（手首カメラ D435i）
 
 | 名前 | 種別 | 用途 |
 | --- | --- | --- |
@@ -309,7 +355,7 @@ $E ros2 run tf2_ros tf2_echo map wrist_camera_depth_optical_frame
 > ★ **カメラが動くので、点群を使う側は TF を「メッセージのタイムスタンプ」で
 > 引くこと。** 最新 TF で解決すると腕の動作中に点群がずれます。
 
-### 6-5. 動いているかを確かめる
+### 8-5. 動いているかを確かめる
 
 ```bash
 make check
@@ -332,7 +378,7 @@ $E ros2 run tf2_ros tf2_echo base_link arm_gripper_frame_link
 
 ---
 
-## 7. 自分でノードを書く
+## 9. 自分でノードを書く
 
 **まず動く例を読んでください。** すべて `lekiwi_examples` にあります
 → [`docs/examples.md`](docs/examples.md)
@@ -465,7 +511,7 @@ trail_SO101/
 │   ├── lekiwi_description/     ベースの URDF
 │   ├── rplidar_bringup/        LiDAR
 │   └── realsense_bringup/      カメラ
-├── examples/                   ROS 2 を使わない lerobot 直叩き（+ SO101 モデル）
+├── lerobot_examples/           ROS 2 を使わない lerobot 直叩き（+ SO101 モデル）
 │   ├── pyproject.toml          ★ そちら専用の uv。ホストで動かす
 │   └── uv.lock
 ├── pyproject.toml              ★ ROS 2 開発用の uv。コンテナの中で使う
@@ -478,7 +524,7 @@ trail_SO101/
 > | | 何のため | venv | どこで動く |
 > | --- | --- | --- | --- |
 > | `pyproject.toml`（直下） | **ROS 2 開発** | `.venv` | コンテナの中（`/app/.venv`） |
-> | `examples/pyproject.toml` | lerobot 直叩き | `examples/.venv` | ホスト（Mac / Linux） |
+> | `lerobot_examples/pyproject.toml` | lerobot 直叩き | `lerobot_examples/.venv` | ホスト（Mac / Linux） |
 >
 > 中身のバイナリの OS が違うので、**そもそも共有できません**。
 > ROS 2 の実機開発に必要なのは前者だけです。
@@ -496,7 +542,7 @@ trail_SO101/
 | 2 | [`docs/examples.md`](docs/examples.md) | **動くサンプル。** ★ 最小構成、画像保存、リーチ、キーボード操作 |
 | 3 | [`docs/internals.md`](docs/internals.md) | **内部処理の仕組み。** 指令がどこを通るか |
 | 4 | [`docker/robot/README.md`](docker/robot/README.md) | 停止・非常停止・異常終了からの復帰 |
-| 5 | [`examples/README.md`](examples/README.md) | ROS 2 を使わない lerobot 直叩き |
+| 5 | [`lerobot_examples/README.md`](lerobot_examples/README.md) | ROS 2 を使わない lerobot 直叩き |
 
 ---
 

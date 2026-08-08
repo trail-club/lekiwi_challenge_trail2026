@@ -34,7 +34,7 @@ RPLIDAR や RealSense と同じ TF ツリー上に載せられます。
 - LeKiwi ベース本体、WaveShare サーボコントローラ、12V 電源
 
 > macOS では Docker にシリアルデバイスを渡せないため、この構成は動きません。
-> Mac から直接叩く場合は `examples/lekiwi_base_keyboard.py` を使ってください。
+> Mac から直接叩く場合は `lerobot_examples/lekiwi_base_keyboard.py` を使ってください。
 
 以下のコマンドは、この README があるディレクトリで実行します。
 
