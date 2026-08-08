@@ -35,50 +35,69 @@ cd trail_SO101
 
 ```bash
 cd docker/robot
-cp .env.example .env
 make build
 ```
 
-**★ `.env` はここで実機に合わせて編集してください（後回しにしない）。**
+ビルドを待つ間に、下の 2 つを済ませます（どちらも初回のみ）。
 
-以下のコマンドでデバイスを確認します。
+### udev ルールを入れる（★ Linux のみ）
+
+シリアル 3 本に固定名（`/dev/lekiwi` `/dev/so101_follower` `/dev/rplidar`）を
+付けます。ルールは `SYMLINK+=` で `/dev/<名前>` を作り、`GROUP:="dialout"` を
+付けます。**入れないとコンテナがデバイスを掴めません。**
+
+> ★ **アームとベースはシリアル番号で識別します。** 両方 WaveShare の同じ設計で
+> **VID:PID が同一（`1a86:55d3`）**のため、VID:PID で書くと `/dev/lekiwi` と
+> `/dev/so101_follower` が**どちらも「最後に認識された方」の同じ基板を指し**、
+> 12V のホイール指令が 7.4V のアームサーボへ飛びます。
+
+**① 自分の基板のシリアル番号を調べる**
+
+★ **1 本ずつ挿してください。** 2 本同時に挿すと VID:PID が同じなので、
+どちらのシリアルがどちらの基板か区別できません。
 
 ```bash
-getent group dialout        # 出力の3番目の数字が DIALOUT_GID（Ubuntu なら 20）
-ls -l /dev/lekiwi /dev/so101_follower /dev/rplidar    # 3つとも見えること
+for d in /dev/ttyACM*; do
+  echo "$d  $(udevadm info -q property -n "$d" | grep -m1 ID_SERIAL_SHORT)"
+done
 ```
 
-3つとも見えて `DIALOUT_GID` が 20 なら、**`.env` は編集不要**です。
+**② ルールの `ATTRS{serial}` を①の値に書き換える**
 
-### udev ルールを入れる（初回のみ）
+| ルールファイル | 作られる名前 | 識別のしかた | この機体の値 |
+| --- | --- | --- | --- |
+| `docker/lekiwi_base_ros2/99-lekiwi.rules` | `/dev/lekiwi` | `ATTRS{serial}` | `5A7A017874` |
+| `docker/so101_ros2/99-so101.rules` | `/dev/so101_follower` | `ATTRS{serial}` | `5A7A018080` |
+| `docker/rplidar_ros2/99-rplidar.rules` | `/dev/rplidar` | `idVendor:idProduct` | `10c4:ea60`（CP210x。**書き換え不要**） |
 
-デバイスが見えない場合はルールが入っていません。
+**基板を交換したらシリアルが変わります。**その都度①からやり直してください。
+
+**③ 入れて反映する**
 
 ```bash
+cd ../..          # リポジトリ直下へ戻る
 sudo cp docker/lekiwi_base_ros2/99-lekiwi.rules /etc/udev/rules.d/
 sudo cp docker/so101_ros2/99-so101.rules        /etc/udev/rules.d/
 sudo cp docker/rplidar_ros2/99-rplidar.rules    /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-ルールは `SYMLINK+=` で `/dev/<名前>` を作り、`GROUP:="dialout"` を付けます。
-
-| デバイス | 識別のしかた | 現在の値 |
-| --- | --- | --- |
-| `/dev/lekiwi` | `ATTRS{serial}` | `5A7A017874` |
-| `/dev/so101_follower` | `ATTRS{serial}` | `5A7A018080` |
-| `/dev/rplidar` | `idVendor:idProduct` | `10c4:ea60`（CP210x） |
-
-> ★ **アームとベースはシリアル番号で識別しています。** 両方 WaveShare の同じ
-> 設計で **VID:PID が同一（`1a86:55d3`）**のため、VID:PID で書くと
-> `/dev/lekiwi` と `/dev/so101_follower` が**どちらも「最後に認識された方」の
-> 同じ基板を指し**、12V のホイール指令が 7.4V のアームサーボへ飛びます。
-
-**基板を交換したらシリアルが変わる**ので、ルールの `ATTRS{serial}` を書き換えます。
+**④ 3 つとも見えることを確認する**
 
 ```bash
-udevadm info -q property -n /dev/ttyACM0 | grep ID_SERIAL_SHORT
+ls -l /dev/lekiwi /dev/so101_follower /dev/rplidar
 ```
+
+### `.env` を用意する
+
+```bash
+cd docker/robot
+cp .env.example .env
+getent group dialout        # 出力の 3 番目の数字が DIALOUT_GID（Ubuntu なら 20）
+```
+
+`DIALOUT_GID` が 20 で、④ の 3 つが見えているなら**編集不要**です。
+違うときだけ `.env` を書き換えてください。
 
 ---
 
