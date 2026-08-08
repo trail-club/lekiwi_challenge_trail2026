@@ -385,7 +385,7 @@ docker compose exec -it lekiwi-base /entrypoint.sh \
 > ros2 run lekiwi_examples teleop_keyboard   # j/l = strafe, [/] = 旋回
 > ```
 >
-> → [`ros2_ws/src/lekiwi_examples/README.md`](../../ros2_ws/src/lekiwi_examples/README.md)
+> → [`docs/examples.md`](../../docs/examples.md)
 
 **既定の `speed:=0.5` から始めないでください。** 0.1 → 0.2 と徐々に上げます。
 

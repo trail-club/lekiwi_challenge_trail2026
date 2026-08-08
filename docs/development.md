@@ -4,7 +4,6 @@ kachaka のシミュレーションから来た人向けです。**書き方は�
 実機なので違うところがいくつかあります。
 
 - 使い方の手順は [`../README.md`](../README.md)
-- 名前と型の一覧は [`interfaces.md`](interfaces.md)
 - 中で何が起きているかは [`internals.md`](internals.md)
 
 **★ この文書のコマンドはすべてコンテナ内で実際に通しています。**

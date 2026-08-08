@@ -10,7 +10,7 @@ Docker も使いません。
 > ★ ROS 2 側のアーム記述は `ros2_so_arm/so_arm101_description`（xacro）で、
 > ここで使う `examples/SO101/*.urdf` とは**別物**です。
 > メッシュだけがバイト単位で同一です（詳細は
-> [`internals.md`](internals.md) と `ros2_ws/so101_upstream.repos`）。
+> [`../docs/internals.md`](../docs/internals.md) と `ros2_ws/so101_upstream.repos`）。
 
 ## セットアップ
 

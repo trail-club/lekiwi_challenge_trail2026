@@ -19,7 +19,7 @@
 ```
 
 **★ 自分のプログラムもここに置いてください。** 書き方は
-[`../../../docs/development.md`](../../../docs/development.md)。
+[`../../../docs/development.md`](development.md)。
 
 ---
 
@@ -66,8 +66,9 @@ SUCCEEDED  residual_fk=0.0045
 > ★ **届かない目標では警告して何もしません。** ベースは動かしません
 > （`/cmd_vel` の publisher を一切作らないことで構造的に保証しています）。
 >
-> ★ **精度は数 cm です。** 理由は
-> [`../../../docs/lekiwi_so101_reach.md`](../../../docs/lekiwi_so101_reach.md)。
+> ★ **精度は数 cm です。** `map`→`odom`（slam_toolbox）が 2〜5cm で支配的、
+> アームの FK が 1〜2cm 乗ります。`ACCEPTED` に出る `residual` は
+> **ソルバの残差**であって物理精度ではありません。
 
 ### 2. キーボード操作 — ベースとアームを同時に
 
@@ -134,7 +135,7 @@ ros2 run lekiwi_examples teleop_keyboard
 > arm_shoulder_lift_joint 目標 -0.400 (実測 -0.520) rad
 > ```
 >
-> 保持力が弱い（全関節 `P=16`。[既知の未解決事項](../../../docs/lekiwi_so101_reach.md#既知の未解決事項)）
+> 保持力が弱い（全関節 `P=16`。[既知の未解決事項](#既知の未解決事項)）
 > ため、目標に追い付いた関節は偏差ゼロ = トルクゼロになり、重力で下がります。
 >
 > このノードは**自分が送った目標を覚えていて、そこに加算します**。実測値を
@@ -195,11 +196,25 @@ python3 -m pytest lekiwi_examples -q
 - ハードウェアに触るコード（`so101_bringup` / `lekiwi_base_bringup`）と、
   その上のロジックが混ざらない
 
+## 既知の未解決事項
+
+- **保持力が弱い。** 全関節 `P=16`（STS3215 の工場出荷値 32 の半分。lerobot が
+  振動回避で下げた値）。位置制御のトルクは概ね `P × 位置偏差`で、目標に追い付いた
+  関節は偏差ゼロ = トルクゼロになり重力で下がります。
+  **直す場所は ROS 側ではなく LeRobot の設定**です
+- **電源電圧が定格より低い。** サーボは 7.4V 定格ですが静止時の実測は 4.9V。
+  上記の一因である可能性がありますが**未検証**です。
+  **★ 8.0V を超えるとサーボが壊れます。** 電源の変更は人間の判断が必要です
+- **干渉チェックが一切ありません。** 単一 waypoint なので JTC が関節空間で補間し、
+  肘が天板や LiDAR を通り抜ける経路を取りえます
+- **`nav2.yaml` の `robot_radius: 0.17` は収納状態の前提です。** 伸ばしたまま走ると
+  通れない隙間を計画します。**走行前に stow してください**
+
+
 ## 関連
 
 | 知りたいこと | どこ |
 | --- | --- |
-| ロボットの起動手順 | [`../../../README.md`](../../../README.md) |
-| Topic / Service / Action の一覧 | [`../../../docs/interfaces.md`](../../../docs/interfaces.md) |
-| リーチの仕組みと精度 | [`../../../docs/internals.md`](../../../docs/internals.md) |
-| 自分でノードを書く | [`../../../docs/development.md`](../../../docs/development.md) |
+| ロボットの起動手順 | [`../../../README.md`](../README.md) |
+| 名前と型の一覧・仕組み | [`../../../docs/internals.md`](internals.md) |
+| 自分でノードを書く | [`../../../docs/development.md`](development.md) |

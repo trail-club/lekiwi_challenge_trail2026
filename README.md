@@ -171,8 +171,8 @@ make release
 
 ## 6. サブシステム別の Topic / Service / Action
 
-**よく使うものだけ**を挙げます。全部の一覧と CLI テストコマンドは
-**[`docs/interfaces.md`](docs/interfaces.md)** にあります。
+**よく使うものだけ**を挙げます。全部を見るなら `ros2 topic list -t` /
+`ros2 action list -t` / `ros2 service list -t` が確実です。
 
 以降 `$E` は次の前置きです（`docker exec` は ENTRYPOINT を通らないので必須）。
 
@@ -184,30 +184,26 @@ E="docker compose -f docker/robot/compose.yaml exec robot /entrypoint.sh"
 
 | 名前 | 種別 | 用途 |
 | --- | --- | --- |
-| `/clicked_point` | Topic `PointStamped` | **リーチ目標**。RViz の "Publish Point" と同じ |
-| `/so101/reach_target` | Topic `PoseStamped` | リーチ目標（`frame_id: map` 必須） |
-| `/so101/reach_status` | Topic `String` | 判定結果 1 行。**まずこれを流しておく** |
-| `/so101/reach_markers` | Topic `Marker` | 目標球（緑 = 受理 / 赤 = 棄却） |
 | `/joint_trajectory_controller/follow_joint_trajectory` | **Action** | 関節を直接動かす（5 関節） |
 | `/gripper_controller/gripper_cmd` | **Action** | グリッパ |
 | `/so101/stow` | **Service** | **アームを畳む。停止前に必ず** |
 | `/joint_states` | Topic `JointState` | 関節角。★ publisher は 2 つ（車輪 / アーム） |
+| `/so101/lerobot_bridge/shutdown` | **Service** | トルク OFF して終了 |
 
 ```bash
-# map 上の点へ伸ばす
-$E ros2 topic pub --once -w 1 /so101/reach_target geometry_msgs/msg/PoseStamped \
-  '{header: {frame_id: map}, pose: {position: {x: 0.35, y: 0.05, z: 0.25}, orientation: {w: 1.0}}}'
+# ★ 🔴 実際に動きます。人が立ち会うこと
+$E ros2 action send_goal -f /joint_trajectory_controller/follow_joint_trajectory \
+  control_msgs/action/FollowJointTrajectory \
+  '{trajectory: {joint_names: [arm_shoulder_pan_joint, arm_shoulder_lift_joint,
+     arm_elbow_flex_joint, arm_wrist_flex_joint, arm_wrist_roll_joint],
+    points: [{positions: [0.0, 0.0, 0.5, 0.5, 0.0], time_from_start: {sec: 3}}]}}'
 
 # 畳む（★ 停止前に必ず）
 $E ros2 service call /so101/stow std_srvs/srv/Trigger '{}'
 ```
 
-> ★ 上 4 つ（`/clicked_point` と `/so101/reach_*`）を扱うのは `lekiwi_examples`
-> のリーチノードです。`robot.launch.py` には含まれないので、コンテナの中で
-> `ros2 launch lekiwi_examples reach.launch.py` を別に起動してください。
->
-> ★ **届かない目標は「警告して何もしない」**のが仕様です。ベースは動きません。
-> 到達不能かどうかは**指令を出す前にオフラインで判定**しています。
+> ★ `map` 上の点へアームを伸ばす「リーチ」は `lekiwi_examples` にあります。
+> `robot.launch.py` には含まれません → [`docs/examples.md`](docs/examples.md)
 
 ### 6-2. ベース（走行・ナビゲーション）
 
@@ -219,8 +215,9 @@ $E ros2 service call /so101/stow std_srvs/srv/Trigger '{}'
 | `/cmd_vel` | Topic `Twist` | 速度指令。★ **安全機構より下流**（下記） |
 | `/odom` | Topic `Odometry` | 自己位置。★ **指令値の積分**で実測ではない |
 | `/map` | Topic `OccupancyGrid` | SLAM が作った地図 |
-| `/plan` `/optimal_trajectory` | Topic `Path` | 大域経路 / 局所軌道（MPPI） |
+| `/plan` `/optimal_trajectory` | Topic `Path` | 大域経路 / 局所軌道。★ 他構成でよくある `/local_plan` は**存在しません** |
 | `/lekiwi_base_driver/recover` | **Service** | 過負荷ラッチ解除 + 速度モード再設定 |
+| `/global_costmap/clear_entirely_global_costmap` | **Service** | コストマップに幻の障害物が焼き付いたとき |
 
 ```bash
 # ナビ目標（アクション。結果が返る）
@@ -229,6 +226,8 @@ $E ros2 action send_goal -f /navigate_to_pose nav2_msgs/action/NavigateToPose \
 
 # ★ 車輪を浮かせてから。2 秒流す（watchdog が 0.5 秒なので --once では止まる）
 $E ros2 topic pub -r 10 --times 20 /cmd_vel geometry_msgs/msg/Twist '{linear: {x: 0.05}}'
+
+$E ros2 lifecycle get /bt_navigator     # active でなければ経路計画も走りません
 ```
 
 > ★ **`/cmd_vel` を手打ちすると Nav2 の安全機構を全部飛ばします。**
@@ -272,11 +271,32 @@ $E ros2 run tf2_ros tf2_echo map wrist_camera_depth_optical_frame
 >
 > ★ **点群を `map` 上に置くのに較正は要りません。** カメラは URDF で
 > `arm_gripper_link` に剛体固定されているので TF から出ます。
-> ただし**取付姿勢の既定値は未実測**なので、絶対位置はまだ信用できません
-> （[`docs/wrist_camera.md`](docs/wrist_camera.md)）。
+> ただし**取付姿勢の既定値は未実測**（D405 + 公式ホルダ前提の幾何計算値）
+> なので、絶対位置はまだ信用できません。
 >
 > ★ **カメラが動くので、点群を使う側は TF を「メッセージのタイムスタンプ」で
 > 引くこと。** 最新 TF で解決すると腕の動作中に点群がずれます。
+
+### 6-5. 動いているかを確かめる
+
+```bash
+make check
+```
+
+`/robot_description` = **1**、`/joint_states` = **2**、コントローラ 3 つが `active`、
+`/navigate_to_pose` と `follow_joint_trajectory` が**両方**見えれば正常です。
+
+```bash
+$E ros2 run tf2_ros tf2_echo map base_footprint              # 自己位置
+$E ros2 run tf2_ros tf2_echo base_link arm_gripper_frame_link
+#   ★ 全関節ゼロなら (0.471, 0.000, 0.283) になるはず
+```
+
+> ★ **`/robot_description` の publisher は 1 つでなければなりません。**
+> 2 つ以上あると RViz に別のロボットが重なって出ます。
+>
+> ★ `ros2 topic list` は **discovery 待ちで最初は少なく出ます**。
+> 足りないように見えても数秒待ってから読み直してください。
 
 ---
 
@@ -369,21 +389,12 @@ trail_SO101/
 
 | # | ドキュメント | 内容 |
 | --- | --- | --- |
-| 1 | **この README** | 起動までの手順 |
-| 2 | [`docs/interfaces.md`](docs/interfaces.md) | **Topic / Service / Action の一覧と CLI テスト** |
+| 1 | **この README** | 起動までの手順、Topic / Service / Action の一覧 |
+| 2 | [`docs/examples.md`](docs/examples.md) | **動くサンプル。** リーチ、逆運動学、キーボード操作 |
 | 3 | [`docs/internals.md`](docs/internals.md) | **内部処理の仕組み。** 指令がどこを通るか |
 | 4 | [`docs/development.md`](docs/development.md) | ノードの書き方、つまずきポイント集 |
 | 5 | [`docker/robot/README.md`](docker/robot/README.md) | 停止・非常停止・異常終了からの復帰 |
-
-必要になったときに読むもの:
-
-| ドキュメント | 内容 |
-| --- | --- |
-| [`docs/tf_reliability.md`](docs/tf_reliability.md) | **TF のどこが信用できないか。** 精度で悩んだら |
-| [`docs/lekiwi_so101_reach.md`](docs/lekiwi_so101_reach.md) | リーチの設計と精度（数 cm ずれる理由） |
-| [`docs/wrist_camera.md`](docs/wrist_camera.md) | 手首カメラの取り付けと較正 |
-| [`docs/lerobot_examples.md`](docs/lerobot_examples.md) | ROS 2 を使わない lerobot 直叩き |
-| [`docs/hardware_agent.md`](docs/hardware_agent.md) | 実機を触る担当者への指示 |
+| 6 | [`examples/README.md`](examples/README.md) | ROS 2 を使わない lerobot 直叩き |
 
 ---
 

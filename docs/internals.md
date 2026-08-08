@@ -1,7 +1,7 @@
 # 内部処理の仕組み
 
 「トピックに投げると、なぜアームが動くのか」を追える資料です。
-使い方は [`../README.md`](../README.md)、名前の一覧は [`interfaces.md`](interfaces.md)。
+使い方と名前の一覧は [`../README.md`](../README.md)。
 
 **★ ここに書いてあることは、すべてコードを読むか実際に動かして確認しています。**
 未確認のものは「未確認」と明記しています。
@@ -238,8 +238,6 @@ map
                                  └─ wrist_camera_depth_optical_frame
 ```
 
-**どこが信用できないかは [`tf_reliability.md`](tf_reliability.md) にまとまっています。**
-ここでは重複させません。
 
 ### ★ 手首カメラに外部キャリブレーションが要らない理由
 
@@ -429,8 +427,6 @@ SHA とワークスペースの中身が**ずれようがありません**。
 | 知りたいこと | どこ |
 | --- | --- |
 | 使い方の手順 | [`../README.md`](../README.md) |
-| 名前と型の一覧 | [`interfaces.md`](interfaces.md) |
 | 自分でノードを書く | [`development.md`](development.md) |
-| TF のどこが信用できないか | [`tf_reliability.md`](tf_reliability.md) |
-| リーチの精度と未解決事項 | [`lekiwi_so101_reach.md`](lekiwi_so101_reach.md) |
+| リーチとキーボード操作 | [`examples.md`](examples.md) |
 | 停止・非常停止・復帰 | [`../docker/robot/README.md`](../docker/robot/README.md) |
