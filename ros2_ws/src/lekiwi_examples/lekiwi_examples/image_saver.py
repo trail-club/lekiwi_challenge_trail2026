@@ -40,6 +40,22 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 from std_srvs.srv import Trigger
 
+#: 保存先。docker/robot/compose.yaml がホストの captured_images/ を張っている。
+OUTPUT_DIR = Path("/captured_images")
+RGB_NAME = "example_rgb.png"
+DEPTH_NAME = "example_depth.jpg"
+
+COLOR_TOPIC = "/wrist_camera/wrist_camera/color/image_raw"
+# ★ align_depth の既定は false なので、RGB とは画角がずれる。
+#   揃えたいなら realsense を align_depth:=true で起動し、ここを
+#   /wrist_camera/wrist_camera/aligned_depth_to_color/image_raw にする。
+DEPTH_TOPIC = "/wrist_camera/wrist_camera/depth/image_rect_raw"
+
+# ★ ROS パラメータにしていないのは、これが**最小構成の例**だから。
+#   実際に運用するノード（reach_to_point / base_driver / teleop_keyboard）は
+#   YAML + declare_parameter を使う。理由は docs/development.md。
+#   なお --symlink-install なので、ここを書き換えれば再ビルド無しで効く。
+
 # sensor_msgs/Image のエンコーディング -> (numpy 型, チャンネル数)
 ENCODINGS = {
     "bgr8": (np.uint8, 3),
@@ -71,36 +87,16 @@ class ImageSaver(Node):
     def __init__(self) -> None:
         super().__init__("image_saver")
 
-        defaults = {
-            "output_dir": "/captured_images",
-            "rgb_name": "example_rgb.png",
-            "depth_name": "example_depth.jpg",
-            "color_topic": "/wrist_camera/wrist_camera/color/image_raw",
-            # ★ align_depth の既定は false なので、RGB とは画角がずれる。
-            #   揃えたいなら realsense を align_depth:=true で起動し、
-            #   ここを aligned_depth_to_color/image_raw にする。
-            "depth_topic": "/wrist_camera/wrist_camera/depth/image_rect_raw",
-        }
-        for name, value in defaults.items():
-            self.declare_parameter(name, value)
-
-        def param(name):
-            return str(self.get_parameter(name).value)
-
-        self._output = Path(param("output_dir"))
-        self._rgb_name = param("rgb_name")
-        self._depth_name = param("depth_name")
-
         # ★ 最新の 1 枚だけ持つ。溜めない。
         self._color: Image | None = None
         self._depth: Image | None = None
         # ★ SENSOR_DATA (BEST_EFFORT)。publisher が RELIABLE でも繋がる。
         self.create_subscription(
-            Image, param("color_topic"),
+            Image, COLOR_TOPIC,
             lambda m: setattr(self, "_color", m), qos_profile_sensor_data,
         )
         self.create_subscription(
-            Image, param("depth_topic"),
+            Image, DEPTH_TOPIC,
             lambda m: setattr(self, "_depth", m), qos_profile_sensor_data,
         )
 
@@ -119,12 +115,12 @@ class ImageSaver(Node):
             self.get_logger().warning(response.message)
             return response
 
-        self._output.mkdir(parents=True, exist_ok=True)
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         # ★ depth は 16UC1 [mm]（0 は無効値）。そのままでは真っ黒なので
         #   最小-最大で 0-255 へ引き伸ばしてグレースケールにする。
         images = (
-            (self._output / self._rgb_name, imgmsg_to_np(color)),
-            (self._output / self._depth_name, cv2.normalize(
+            (OUTPUT_DIR / RGB_NAME, imgmsg_to_np(color)),
+            (OUTPUT_DIR / DEPTH_NAME, cv2.normalize(
                 imgmsg_to_np(depth), None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U
             )),
         )

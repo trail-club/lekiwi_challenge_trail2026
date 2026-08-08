@@ -121,7 +121,13 @@ message: color の画像がまだ 1 枚も届いていない
 
 > ★ depth は `align_depth` の既定が `false` なので **RGB と画角がずれます**。
 > 揃えたいなら realsense を `align_depth:=true` で起動し、
-> `depth_topic` を `aligned_depth_to_color/image_raw` にしてください。
+> `DEPTH_TOPIC` を `aligned_depth_to_color/image_raw` に書き換えてください。
+>
+> ★ **この 2 本は設定を ROS パラメータにせず、ファイル冒頭の定数で持っています。**
+> 最小構成を優先したためです。`--symlink-install` なので書き換えれば
+> 再ビルド無しで効きます。実際に運用するノード（`reach_to_point` /
+> `base_driver` / `teleop_keyboard`）は YAML + `declare_parameter` を使います
+> → [`docs/development.md`](../../../docs/development.md)。
 
 ### 2. リーチ — `map` 上の点へアームを伸ばす
 

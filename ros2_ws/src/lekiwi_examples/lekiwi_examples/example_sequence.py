@@ -28,8 +28,8 @@
 どこで待っているかがコードの見た目と一致する。
 
 その代わり **spin していない間は何も受信しない**。TF バッファの更新も
-spin の中でしか進まないので、`_spin_until()` で `can_transform` に
-なるまで自分で回す。
+spin の中でしか進まないので、TF も async 版 (`wait_for_transform_async`) を
+使う。**待ち方は `_await()` の 1 つだけ**にしてある。
 
 ★ ブロックする API（`ActionClient.send_goal()`、`Buffer.lookup_transform()` の
   `timeout` 付き）は**別スレッドが spin していないと永久に待つ**。
@@ -49,7 +49,6 @@ spin の中でしか進まないので、`_spin_until()` で `can_transform` に
 from __future__ import annotations
 
 import math
-import time
 
 import rclpy
 from action_msgs.msg import GoalStatus
@@ -81,70 +80,45 @@ STOW = (0.0322, -1.7253, 1.5200, -1.5800, 1.3709)
 #   手先はおよそ (0.067, 0.000, 0.429) [m] で、ほぼ真上を向く。
 RAISED = (0.0, -0.2570, -1.2900, 0.0, 0.0)
 
+#: 前へ進む距離 [m]
+FORWARD_DISTANCE = 0.5
+#: ナビゲーション目標を置くフレーム。Nav2 の大域フレームに合わせる。
+GLOBAL_FRAME = "map"
+#: アームが 1 つの姿勢へ移動するのにかける時間 [s]
+MOVE_SECONDS = 4.0
+
+TRAJECTORY_ACTION = "/joint_trajectory_controller/follow_joint_trajectory"
+NAVIGATE_ACTION = "/navigate_to_pose"
+
+# ★ ROS パラメータにしていないのは、これが**最小構成の例**だから。
+#   実際に運用するノード（reach_to_point / base_driver / teleop_keyboard）は
+#   YAML + declare_parameter を使う。理由は docs/development.md。
+#   なお --symlink-install なので、ここを書き換えれば再ビルド無しで効く。
+
 
 class ExampleSequence(Node):
     def __init__(self) -> None:
         super().__init__("example_sequence")
 
-        defaults = {
-            "forward_distance": 0.5,
-            # ナビゲーション目標を置くフレーム。Nav2 の大域フレームに合わせる。
-            "global_frame": "map",
-            "move_seconds": 4.0,
-        }
-        for name, value in defaults.items():
-            self.declare_parameter(name, value)
-
-        def param(name):
-            return self.get_parameter(name).value
-
-        self._distance = float(param("forward_distance"))
-        self._frame = str(param("global_frame"))
-        self._seconds = float(param("move_seconds"))
-
         self._tf = Buffer()
         TransformListener(self._tf, self)
 
-        self._arm = ActionClient(
-            self,
-            FollowJointTrajectory,
-            "/joint_trajectory_controller/follow_joint_trajectory",
-        )
-        self._nav = ActionClient(self, NavigateToPose, "/navigate_to_pose")
+        self._arm = ActionClient(self, FollowJointTrajectory, TRAJECTORY_ACTION)
+        self._nav = ActionClient(self, NavigateToPose, NAVIGATE_ACTION)
 
-    # ── 待つ（spin は全部ここに集める）──────────────────────────────
+    # ── 待つ ──────────────────────────────────────────────────────────
 
-    def _spin_until(self, ready, what: str, timeout: float = 30.0) -> None:
-        """`ready()` が True になるまで spin する。
+    def _await(self, future):
+        """future が終わるまで spin する。待ち方はこれ 1 つだけ。"""
+        rclpy.spin_until_future_complete(self, future)
+        return future.result()
 
-        ★ 別スレッドを使わないので、**購読が進むのは spin の中だけ**。
-          「届くまで待つ」は自分で回すしかない。
-        """
-        limit = time.monotonic() + timeout
-        while not ready():
-            if time.monotonic() > limit:
-                raise RuntimeError(f"{what} を {timeout:.0f} 秒待っても揃わない")
-            rclpy.spin_once(self, timeout_sec=0.1)
-
-    def _send_goal(self, client: ActionClient, goal, what: str, timeout: float):
-        """アクションを送り、結果が返るまで spin する。
-
-        ★ `send_goal()`（同期版）は使わない。あれは別スレッドが spin して
-          いないと永久に待つ。`send_goal_async()` なら自分で回せる。
-        """
-        accepted = client.send_goal_async(goal)
-        rclpy.spin_until_future_complete(self, accepted, timeout_sec=timeout)
-        if not accepted.done():
-            raise RuntimeError(f"{what} のゴールに応答が無い")
-        handle = accepted.result()
+    def _send_goal(self, client: ActionClient, goal, what: str):
+        """アクションを送り、結果が返るまで待つ。"""
+        handle = self._await(client.send_goal_async(goal))
         if not handle.accepted:
             raise RuntimeError(f"{what} のゴールが拒否された")
-
-        finished = handle.get_result_async()
-        rclpy.spin_until_future_complete(self, finished, timeout_sec=timeout)
-        if not finished.done():
-            raise RuntimeError(f"{what} が {timeout:.0f} 秒で終わらない")
-        return finished.result()
+        return self._await(handle.get_result_async())
 
     # ── 1〜3. アーム ──────────────────────────────────────────────────
 
@@ -157,35 +131,30 @@ class ExampleSequence(Node):
         point = JointTrajectoryPoint()
         point.positions = [float(v) for v in positions]
         point.velocities = [0.0] * len(positions)
-        point.time_from_start = Duration(sec=int(self._seconds))
+        point.time_from_start = Duration(sec=int(MOVE_SECONDS))
 
         goal = FollowJointTrajectory.Goal()
         goal.trajectory = JointTrajectory()
         goal.trajectory.joint_names = list(ARM_JOINTS)
         goal.trajectory.points = [point]
 
-        result = self._send_goal(self._arm, goal, f"アーム({label})",
-                                 self._seconds + 20.0)
+        result = self._send_goal(self._arm, goal, f"アーム({label})")
         if result.result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
             raise RuntimeError(f"アームが失敗: {result.result.error_string}")
 
     # ── 4. ナビゲーション ─────────────────────────────────────────────
 
     def move_forward(self) -> None:
-        self.get_logger().info(f"前方 {self._distance:.2f} m へナビゲーション")
+        self.get_logger().info(f"前方 {FORWARD_DISTANCE:.2f} m へナビゲーション")
         if not self._nav.wait_for_server(timeout_sec=10.0):
             raise RuntimeError("Nav2 のアクションサーバが居ない")
 
         # ★ `lookup_transform(..., timeout=...)` は使わない。あれは内部で
         #   sleep して待つだけなので、別スレッドが spin していないと
-        #   バッファが埋まらず必ずタイムアウトする。自分で回して待つ。
-        self._spin_until(
-            lambda: self._tf.can_transform(self._frame, "base_link", rclpy.time.Time()),
-            f"TF {self._frame} -> base_link",
-        )
-        transform = self._tf.lookup_transform(
-            self._frame, "base_link", rclpy.time.Time()
-        ).transform
+        #   バッファが埋まらず必ずタイムアウトする。async 版を待つ。
+        now = rclpy.time.Time()
+        self._await(self._tf.wait_for_transform_async(GLOBAL_FRAME, "base_link", now))
+        transform = self._tf.lookup_transform(GLOBAL_FRAME, "base_link", now).transform
         rotation = transform.rotation
         yaw = math.atan2(
             2.0 * (rotation.w * rotation.z + rotation.x * rotation.y),
@@ -203,16 +172,16 @@ class ExampleSequence(Node):
         #   **目標ちょうどには止まらない**。0.5m 指令に対し実測 0.37〜0.39m。
         goal = NavigateToPose.Goal()
         goal.pose = PoseStamped()
-        goal.pose.header.frame_id = self._frame
+        goal.pose.header.frame_id = GLOBAL_FRAME
         goal.pose.pose.position.x = (
-            transform.translation.x + self._distance * math.cos(yaw)
+            transform.translation.x + FORWARD_DISTANCE * math.cos(yaw)
         )
         goal.pose.pose.position.y = (
-            transform.translation.y + self._distance * math.sin(yaw)
+            transform.translation.y + FORWARD_DISTANCE * math.sin(yaw)
         )
         goal.pose.pose.orientation = rotation  # 向きは変えない
 
-        result = self._send_goal(self._nav, goal, "ナビゲーション", 300.0)
+        result = self._send_goal(self._nav, goal, "ナビゲーション")
         # ★ 結果を必ず見る。Nav2 は「行けなかった」も返す。
         if result.status != GoalStatus.STATUS_SUCCEEDED:
             raise RuntimeError(f"ナビゲーションが失敗: status={result.status}")
