@@ -92,17 +92,21 @@ Hi from my_first_pkg.
 > ★ **`feetech-servo-sdk`（import 名 `scservo_sdk`）や `lerobot` には rosdep キーが
 > ありません。** `package.xml` には書けません。
 >
-> **Python の依存は `docker/robot/pyproject.toml` に足して `uv lock` を更新し、
-> `make build` します**（コンテナ内の `/opt/venv` を uv が管理しています）。
+> **Python の依存は**リポジトリ直下の**`pyproject.toml` に足します。**
+> これが ROS 2 開発用の唯一の uv プロジェクトです。
 >
 > ```bash
-> # docker/robot/pyproject.toml に足してから、コンテナ内で
-> cd /opt/robot-venv && uv lock
-> # 生成された uv.lock を docker/robot/ へコピーして commit
+> # pyproject.toml に足してから、コンテナ内で
+> cd /app && uv lock && uv sync
+> # uv.lock はリポジトリ直下に生成される。そのまま commit する
 > ```
 >
-> ★ ホストの `pyproject.toml`（リポジトリルート）とは**別物**です。あちらは
-> `examples/` の lerobot 直叩き用で、共有していません。
+> **`make build` は要りません。** venv はイメージに焼かず `/app/.venv`
+> （＝ホストのリポジトリ直下 `.venv`）に置いてあるので、`uv sync` だけで反映されます。
+>
+> ★ `examples/pyproject.toml` とは**別物**です。あちらは ROS 2 を使わない
+> lerobot 直叩き用で、**ホストで動かす**もの。バイナリの OS が違うので
+> 共有できません → [`lerobot_examples.md`](lerobot_examples.md)。
 
 ---
 

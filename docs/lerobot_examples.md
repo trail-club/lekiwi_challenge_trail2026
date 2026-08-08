@@ -17,12 +17,16 @@ Docker も使いません。
 ```bash
 # Mac（開発機）
 brew install ffmpeg
-uv sync
+cd examples && uv sync
 
 # Linux PC（実機を繋ぐほう）
 sudo apt-get update && sudo apt-get install -y ffmpeg
-uv sync
+cd examples && uv sync
 ```
+
+> ★ **`examples/` の中で叩くこと。** venv は `examples/.venv` に作られます。
+> リポジトリ直下の `pyproject.toml` / `.venv` は**ROS 2 開発用**（コンテナの中で
+> 使う Linux バイナリ）で、こちらとは別物です → [`development.md`](development.md)。
 
 ## 設定
 
@@ -46,9 +50,9 @@ uv run python -m lerobot.scripts.lerobot_find_cameras
 
 ```bash
 # Linux PC（実機）
-uv run python examples/record_and_move.py
-uv run python examples/record_and_move_ik.py
-uv run python examples/capture_camera.py
+uv run python record_and_move.py
+uv run python record_and_move_ik.py
+uv run python capture_camera.py
 ```
 
 ## モデルファイル

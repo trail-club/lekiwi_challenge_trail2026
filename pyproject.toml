@@ -1,10 +1,76 @@
+# ★ このリポジトリの ROS 2 開発用の Python 環境。**これが唯一の uv プロジェクト**。
+#
+#   venv は <リポジトリルート>/.venv に作る。compose がリポジトリを /app へ
+#   bind mount するので、コンテナからは /app/.venv として見える。
+#   **中身は Linux のバイナリ**（コンテナ内で uv sync して作る）。
+#
+# ★ ROS 2 を使わない lerobot 直叩きは examples/ に分けてある。
+#   あちらは examples/pyproject.toml + examples/.venv で、**ホストの Mac /
+#   Linux で直接動かす**もの。この環境とは共有しない
+#   （バイナリの OS が違うので共有できない）。
+#
+# ★ ROS の Python（rclpy / sensor_msgs / nav2_msgs …）はここに書けない。
+#   PyPI に無く apt でしか入らないため、PYTHONPATH 経由で借りる。
+#   entrypoint.sh が「ROS を source → ワークスペース → venv を activate」の
+#   順で用意する。
+#
+# 依存を足したら、コンテナ内で lock と sync をやり直すこと:
+#   cd /app && uv lock && uv sync
+#   （uv.lock はリポジトリ直下に生成される。そのまま commit する）
+#
+# ★ build-system を**書かない**。書くとこのリポジトリ自体を Python
+#   パッケージとして install しようとする。uv は仮想プロジェクトとして扱う。
+
 [project]
 name = "trail-so101"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.12"
+description = "ROS 2 development environment for the LeKiwi + SO-101 robot"
+requires-python = "==3.12.*"
 dependencies = [
+    # ── アームのハードウェア I/O ──────────────────────────────
+    # モータ設定・較正・単位変換はすべて LeRobot 経由。
+    # ★ numpy>=2.0,<2.3 をこれが連れてくる。ROS のメッセージ型も
+    #   この numpy を使うことになる（実測で 2.2.6、テスト 141 件 pass）。
     "lerobot[feetech]==0.5.1",
-    "placo>=0.9.6,<0.9.17",
+    # lerobot も引くが、sts_bus.py の setPacketTimeout モンキーパッチが
+    # 1.0.0 系の実装を前提にしているので明示的に固定する。
+    "feetech-servo-sdk==1.0.0",
+
+    # ── ROS 側が import するのに venv からは見えないもの ──────
+    # ★ rclpy が parameter.py で import する。apt の python3-yaml は
+    #   /usr/lib/python3/dist-packages にあり、venv からは見えない。
+    #   これが無いと `import rclpy` の時点で落ちる（実測）。
+    "pyyaml>=6.0",
+
+    # ── テスト ────────────────────────────────────────────────
+    # ★★ 版を apt に合わせて固定する。venv を作っても PYTHONPATH 経由で
+    #   ROS の pytest プラグイン（ament_flake8 / ament_copyright /
+    #   ament_pep257 / ament_xmllint）が読み込まれる。これらは pytest 7 の
+    #   API で書かれており、pytest 9 を入れるとテストが 1 件も走らなくなる:
+    #     hookimpl definition: pytest_pycollect_makemodule(path, parent)
+    #     Argument(s) {'path'} are declared in the hookimpl but can not be
+    #     found in the hookspec
+    #   Ubuntu 24.04 の python3-pytest は 7.4.4。
+    "pytest==7.4.4",
+
+    # ── colcon ────────────────────────────────────────────────
+    # ★★ colcon を **venv 側に入れる**こと。apt の /usr/bin/colcon で
+    #   ビルドすると sys.executable が /usr/bin/python3 になり、
+    #   setuptools が console_script の shebang をそこへ書く。
+    #   その結果、`ros2 run` したノードが venv を見ずに起動し
+    #     ModuleNotFoundError: No module named 'scservo_sdk'
+    #   で落ちる（実測。base_driver が起動しなくなった）。
+    #   venv の colcon で建てれば shebang は /opt/venv/bin/python3 になる。
+    "colcon-common-extensions>=0.3",
+    # colcon が ament_python の setup.py を実行するのに要る
+    "catkin-pkg>=1.0",
+    "empy>=4.2",
+    "lark>=1.2",
+    "setuptools<80",
 ]
+
+[tool.uv]
+# ★ ROS の C 拡張（_rclpy_pybind11.so など）は Ubuntu 24.04 のシステム
+#   Python 3.12 向けにビルドされている。uv に独自ビルドの Python を
+#   使わせると ABI が食い違いうるので、システムの Python を強制する。
+python-preference = "only-system"

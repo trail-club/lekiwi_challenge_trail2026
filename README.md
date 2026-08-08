@@ -92,6 +92,18 @@ cd docker/robot
 make bootstrap
 ```
 
+これが 2 つのことをやります。
+
+1. **Python 環境を作る** — `uv sync` がリポジトリ直下に `.venv` を作ります
+   （★ 初回だけ約 1.7GB。torch を含むので時間がかかります）
+2. **ワークスペースを建てる** — 上流の配置 → `colcon build` → 静的検査
+
+> ★ **`.venv` はホスト側に残ります。** コンテナを作り直してもイメージを
+> 作り直しても消えないので、2 回目以降の `make bootstrap` は一瞬で終わります。
+>
+> ★ Python の依存はリポジトリ直下の `pyproject.toml` に足して、コンテナ内で
+> `cd /app && uv lock && uv sync` します。**`make build` は要りません。**
+
 ---
 
 ## 4. 起動する
@@ -473,8 +485,22 @@ trail_SO101/
 │   ├── rplidar_bringup/        LiDAR
 │   └── realsense_bringup/      カメラ
 ├── examples/                   ROS 2 を使わない lerobot 直叩き（+ SO101 モデル）
+│   ├── pyproject.toml          ★ そちら専用の uv。ホストで動かす
+│   └── uv.lock
+├── pyproject.toml              ★ ROS 2 開発用の uv。コンテナの中で使う
+├── uv.lock
 └── docs/                       ドキュメント
 ```
+
+> ## ★ uv のプロジェクトは 2 つあります。共有していません
+>
+> | | 何のため | venv | どこで動く |
+> | --- | --- | --- | --- |
+> | `pyproject.toml`（直下） | **ROS 2 開発** | `.venv` | コンテナの中（`/app/.venv`） |
+> | `examples/pyproject.toml` | lerobot 直叩き | `examples/.venv` | ホスト（Mac / Linux） |
+>
+> 中身のバイナリの OS が違うので、**そもそも共有できません**。
+> ROS 2 の実機開発に必要なのは前者だけです。
 
 > ★ `ros2_ws/src/ros2_so_arm` と `ros2_ws/src/sllidar_ros2` は**上流**で、
 > `.gitignore` 済みです。`make bootstrap` がイメージから配置します。
