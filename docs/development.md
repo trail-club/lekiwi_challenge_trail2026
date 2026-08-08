@@ -97,9 +97,15 @@ Hi from my_first_pkg.
 >
 > ```bash
 > # pyproject.toml に足してから、コンテナ内で
-> cd /app && uv lock && uv sync
-> # uv.lock はリポジトリ直下に生成される。そのまま commit する
+> cd /app && uv sync
+> # uv.lock も一緒に更新される。pyproject.toml と両方 commit する
 > ```
+>
+> ★ **`uv lock` を別に打つ必要はありません。** `uv sync` が両方やります。
+>
+> ★ **ホスト側で `uv sync` しないでください。** macOS には system の
+> Python 3.12 が無いので `No interpreter found for Python 3.12` で止まります
+> （`python-preference = "only-system"` のため）。事故防止として機能しています。
 >
 > **`make build` は要りません。** venv はイメージに焼かず `/app/.venv`
 > （＝ホストのリポジトリ直下 `.venv`）に置いてあるので、`uv sync` だけで反映されます。

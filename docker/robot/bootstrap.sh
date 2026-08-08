@@ -32,9 +32,22 @@ source /opt/ros/jazzy/setup.bash
 #   失敗すると**空の venv が残り**、次回そこを「作成済み」と誤判定して
 #   `No module named colcon` で落ちる（実際に踏んだ）。
 #   `uv sync` は venv が無ければ自分で作るので、毎回これだけ呼べばよい。
+#
+# ★★ `--frozen` ではなく `--locked` を使うこと。
+#   --frozen は「lock をそのまま使う」なので、pyproject.toml に依存を足して
+#   uv.lock を更新し忘れていると、**終了コード 0 のまま追加を黙って取り消す**
+#   （足したパッケージが uninstall される。実測で確認した）。
+#   --locked は食い違いを終了コード 1 で知らせる。
 [ -d /app/.venv ] || echo "== Python 環境を作ります (初回のみ。約 1.7GB) =="
 cd /app
-uv sync --frozen --no-install-project
+if ! uv sync --locked --no-install-project; then
+  echo >&2
+  echo "ERROR: pyproject.toml と uv.lock が食い違っています。" >&2
+  echo "       依存を足したなら、コンテナ内で同期してください:" >&2
+  echo "         cd /app && uv sync" >&2
+  echo "       (uv sync が uv.lock も更新します。両方 commit すること)" >&2
+  exit 1
+fi
 # ★ colcon を venv の側で動かす。apt の /usr/bin/colcon で建てると
 #   console_script の shebang が /usr/bin/python3 になり、`ros2 run` した
 #   ノードが venv を見ずに ModuleNotFoundError で落ちる（実測）。

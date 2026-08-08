@@ -101,8 +101,9 @@ make bootstrap
 > ★ **`.venv` はホスト側に残ります。** コンテナを作り直してもイメージを
 > 作り直しても消えないので、2 回目以降の `make bootstrap` は一瞬で終わります。
 >
-> ★ Python の依存はリポジトリ直下の `pyproject.toml` に足して、コンテナ内で
-> `cd /app && uv lock && uv sync` します。**`make build` は要りません。**
+> ★ Python の依存はリポジトリ直下の `pyproject.toml` に足して、**コンテナ内で
+> `cd /app && uv sync` するだけ**です（`uv.lock` も一緒に更新されます）。
+> **`make build` も `colcon build` も要りません。**
 
 ---
 

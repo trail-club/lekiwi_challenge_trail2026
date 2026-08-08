@@ -14,9 +14,15 @@
 #   entrypoint.sh が「ROS を source → ワークスペース → venv を activate」の
 #   順で用意する。
 #
-# 依存を足したら、コンテナ内で lock と sync をやり直すこと:
-#   cd /app && uv lock && uv sync
-#   （uv.lock はリポジトリ直下に生成される。そのまま commit する）
+# 依存を足したら、**コンテナ内で uv sync するだけ**でよい:
+#   cd /app && uv sync
+#   uv sync が uv.lock も更新する（uv lock を別に打つ必要は無い）。
+#   pyproject.toml と uv.lock の両方を commit すること。
+#   ★ イメージの作り直し（make build）も colcon build も要らない。
+#
+# ★ ホスト側で uv sync しないこと。macOS には system の Python 3.12 が無く
+#   `No interpreter found for Python 3.12` で止まる（only-system のため）。
+#   これは事故防止として機能している。ここで作るべきは Linux の venv。
 #
 # ★ build-system を**書かない**。書くとこのリポジトリ自体を Python
 #   パッケージとして install しようとする。uv は仮想プロジェクトとして扱う。
