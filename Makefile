@@ -28,11 +28,21 @@
 #   別のディレクトリから呼ばれても壊れないよう、この Makefile 自身の場所から解く。
 ROBOT_DIR := $(dir $(realpath $(firstword $(MAKEFILE_LIST))))docker/robot
 
-# docker/robot/Makefile が持つターゲットをそのまま通す。
-# ★ ワイルドカード (%:) にしない。打ち間違えたターゲットが黙って
-#   委譲先に流れ、「そんなものは無い」という分かりにくいエラーになる。
-FORWARD := build bootstrap up run mock shell stow save-map check \
-           release release-wheels release-check down logs
+# docker/robot/Makefile が持つターゲットを**全部**そのまま通す。
+#
+# ★ 一覧を手で書き写さない。あちらにターゲットを足したときにここへ写し忘れ、
+#   「docker/robot では動くのに直下からは動かない」というズレが起きる。
+#   ファイルから抜き出せば、足した瞬間から直下でも使える。
+#
+# ★ ワイルドカード (%:) にしないのは、打ち間違えたターゲットが黙って
+#   委譲先へ流れないようにするため。実在するものだけを列挙するので、
+#   `make buld` はここで止まる。
+FORWARD := $(shell grep -oE '^[a-z][a-z0-9_-]*:' $(ROBOT_DIR)/Makefile 2>/dev/null \
+                   | tr -d ':' | sort -u)
+
+ifeq ($(strip $(FORWARD)),)
+$(error $(ROBOT_DIR)/Makefile が読めません。リポジトリの構成を確認してください)
+endif
 
 .PHONY: help $(FORWARD)
 
@@ -55,6 +65,9 @@ help:
 	@echo '  make release-check  トルクが入っているかを読むだけ (何も書かない)'
 	@echo '  make down        コンテナを停止・削除'
 	@echo '  make logs        ログを追う'
+	@echo ''
+	@echo '使えるターゲット (docker/robot/Makefile から取得):'
+	@echo '  $(FORWARD)'
 	@echo ''
 	@echo '★ 非常停止は物理スイッチだけ。docker kill は使わないこと。'
 
