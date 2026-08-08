@@ -113,6 +113,8 @@ services:
       #   ここから解決される。初回とパッケージ追加時は make bootstrap。
       - ../../ros2_ws:/ros2_ws
       - ./bootstrap.sh:/bootstrap.sh:ro
+      # 保存した画像をホストから見るため (lekiwi_examples の example_sequence)
+      - ../../captured_images:/captured_images
       # RealSense。privileged と併せて USB の再接続に追従させる。
       - /dev/bus/usb:/dev/bus/usb
       - /tmp/.X11-unix:/tmp/.X11-unix:rw

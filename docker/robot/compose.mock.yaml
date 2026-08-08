@@ -48,6 +48,8 @@ services:
     volumes:
       - ../../ros2_ws:/ros2_ws
       - ./bootstrap.sh:/bootstrap.sh:ro
+      # 保存した画像をホストから見るため (lekiwi_examples の example_sequence)
+      - ../../captured_images:/captured_images
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-/tmp/.Xauthority}:/tmp/.Xauthority:ro
     command: ["bash"]

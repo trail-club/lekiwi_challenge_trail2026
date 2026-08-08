@@ -41,7 +41,54 @@ cd docker/robot && make mock
 cd docker/robot && make shell
 ```
 
-### 1. リーチ — `map` 上の点へアームを伸ばす
+### 1. 最小構成の例 — まずこれを読む
+
+```bash
+# コンテナ内
+ros2 run lekiwi_examples example_sequence
+```
+
+アーム・ナビゲーション・カメラを**ひととおり 1 ファイルで**触ります。
+
+1. アームを stow（収納）へ
+2. アームを上げる
+3. アームを stow へ戻す
+4. 前方 50cm へナビゲーション
+5. 手首カメラの画像を保存
+
+保存先は `captured_images/example_rgb.png` と `example_depth.jpg`
+（`docker/robot/compose.yaml` が `/captured_images` にマウントしています）。
+
+> ★ **車輪を浮かせるか、前方 1m を空けてください。** 4 で実際に走ります。
+> アームは可動域の内側ですが**干渉チェックはありません**。
+
+読みどころは 3 つです。
+
+| 論点 | 中身 |
+| --- | --- |
+| **スレッドを使わない** | アクションは `send_goal_async()` + `spin_until_future_complete()` で待ちます。手順が上から下へ一直線に読め、どこで待っているかがコードと一致します |
+| **`cv_bridge` を使わない** | numpy 2 で `imgmsg_to_cv2()` が SIGSEGV します（import は通るので気付きにくい）。`imgmsg_to_np()` を自前で持っています → [`docs/development.md`](../../../docs/development.md) |
+| **画像は購読しっぱなし** | 最新の 1 枚だけ持ち、変換と保存は最後にまとめてやります。撮りたい瞬間に同期を取らずに済みます |
+| **ナビ目標は固定フレームで自分で計算** | `frame_id: base_link` に「前へ 0.5m」と書くと**目標が自分に付いて回り**、Nav2 が収束しません。モック実測で ABORTED（224 秒で 0.123m）。`map` で計算すれば SUCCEEDED |
+
+> ## ★ スレッドを使わないなら、ブロックする API を呼んではいけない
+>
+> spin していない間は**何も受信しません**。購読も TF バッファの更新も
+> spin の中でしか進まないので、次の 2 つは**別スレッドが spin していないと
+> 永久に待ちます**。
+>
+> | 呼んではいけない | 代わりに |
+> | --- | --- |
+> | `ActionClient.send_goal()`（同期版） | `send_goal_async()` + `spin_until_future_complete()` |
+> | `Buffer.lookup_transform(..., timeout=…)` | `can_transform()` になるまで `spin_once()` で回してから、timeout 無しで引く |
+>
+> `ActionClient.wait_for_server()` だけは例外で、グラフを直接見るので
+> spin が要りません。
+
+> ★ `nav2.yaml` の `xy_goal_tolerance: 0.12` があるので、
+> **50cm ちょうどには止まりません**（モック実測で 0.39m）。
+
+### 2. リーチ — `map` 上の点へアームを伸ばす
 
 ```bash
 # コンテナ内
@@ -69,7 +116,7 @@ SUCCEEDED  residual_fk=0.0045
 > ★ **精度は数 cm です。** 理由は
 > [`../../../docs/lekiwi_so101_reach.md`](../../../docs/lekiwi_so101_reach.md)。
 
-### 2. キーボード操作 — ベースとアームを同時に
+### 3. キーボード操作 — ベースとアームを同時に
 
 ```bash
 # コンテナ内
@@ -152,7 +199,7 @@ ros2 run lekiwi_examples teleop_keyboard
 > しまいます。1 打あたりの `arm_step`（0.05 rad）は行き先を進めるだけで、
 > 実際に送る目標は 20Hz のタイマーが `arm_speed` で寄せていきます。
 
-### 3. デカルト座標でのジョグ（手先を XYZ で動かす）
+### 4. デカルト座標でのジョグ（手先を XYZ で動かす）
 
 ```bash
 # コンテナ内
@@ -160,7 +207,7 @@ ros2 launch lekiwi_examples cartesian_teleop.launch.py
 ```
 
 キー: `w`/`s` = ±x、`a`/`d` = ±y、`r`/`f` = ±z。
-逆運動学（DLS）で関節軌道に変換します。**関節ごとに動かしたいときは 2 を**
+逆運動学（DLS）で関節軌道に変換します。**関節ごとに動かしたいときは 3 を**
 使ってください。
 
 ---
@@ -172,6 +219,7 @@ ros2 launch lekiwi_examples cartesian_teleop.launch.py
 | `cartesian_math.py` | 順運動学・ヤコビアン・**減衰最小二乗（DLS）**。ROS に依存しない |
 | `reach_solver.py` | DLS を**指令の前にオフラインで収束**させる。到達不能の判定 |
 | `reach_to_point.py` | リーチのノード。TF の鮮度チェック、ベース移動の監視、`/so101/stow` |
+| `example_sequence.py` | **最小構成の例。** アーム -> ナビゲーション -> 画像の保存 |
 | `teleop_keyboard.py` | ベース + アームのキーボード操作 |
 | `cartesian_jog.py` + `keyboard_input.py` | デカルト座標のジョグ（2 ノードで 1 組） |
 
