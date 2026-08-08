@@ -23,7 +23,7 @@ lerobot で動かすリポジトリです。
 
 リポジトリをForkし、cloneする。
 ```bash
-git clone git@github.com:<あなたのGitHubユーザー名>/trail_SO101.git
+git clone git@github.com:<ForkしたGitHubユーザー名>/trail_SO101.git
 cd trail_SO101
 ```
 
@@ -41,7 +41,7 @@ make build
 
 **★ `.env` はここで実機に合わせて編集してください（後回しにしない）。**
 
-以下のコマンドで確認します。
+以下のコマンドでデバイスを確認します。
 
 ```bash
 getent group dialout        # 出力の3番目の数字が DIALOUT_GID（Ubuntu なら 20）
@@ -233,7 +233,7 @@ $E ros2 lifecycle get /bt_navigator     # active でなければ経路計画も�
 > ★ **`/cmd_vel` を手打ちすると Nav2 の安全機構を全部飛ばします。**
 > 本来は `controller_server → /cmd_vel_nav → velocity_smoother →
 > /cmd_vel_smoothed → collision_monitor → /cmd_vel` の 3 段構えで、
-> 加速度制限も衝突監視もその途中にあります。**床に降ろした状態で使わないこと。**
+> 加速度制限も衝突監視もその途中にあります。
 
 ### 6-3. LiDAR（RPLIDAR A1）
 
@@ -302,6 +302,18 @@ $E ros2 run tf2_ros tf2_echo base_link arm_gripper_frame_link
 
 ## 7. 自分でノードを書く
 
+**まず動く例を読んでください。** すべて `lekiwi_examples` にあります
+→ [`docs/examples.md`](docs/examples.md)
+
+| 例 | 何を示しているか |
+| --- | --- |
+| **`example_sequence`** | **★ 最小構成。** アクションの呼び方、`Ctrl+C` の畳み方 |
+| `image_saver` | 画像を numpy にする（★ `cv_bridge` を使わない） |
+| `reach_to_point` | TF、複数スレッドでの実行、動かす前の可否判定 |
+| `teleop_keyboard` | 端末入力とタイマ |
+
+### パッケージを作る
+
 ```bash
 # コンテナ内 /ros2_ws/src/
 ros2 pkg create --build-type ament_python --license Apache-2.0 \
@@ -318,8 +330,60 @@ ros2 run my_first_pkg hello
 
 **★ `make bootstrap` を打ち直せば、以降は自動でビルド対象に入ります。**
 
-ノードの書き方、QoS の罠、テストの書き方、つまずきポイント集は
-**[`docs/development.md`](docs/development.md)** にまとめてあります。
+### 依存を足す
+
+`package.xml` に書けるのは rosdep キーがあるものだけです。
+
+> ★ **`lerobot` と `feetech-servo-sdk`（import 名 `scservo_sdk`）には rosdep キーが
+> ありません。** Python の依存は `docker/robot/pyproject.toml` に足して `uv lock` を
+> 更新し、`make build` します。リポジトリ直下の `pyproject.toml` とは**別物**です
+> （あちらは `examples/` 用で、共有していません）。
+
+### 編集したあと何をすればよいか
+
+| 変えたもの | やること |
+| --- | --- |
+| Python / YAML / launch / URDF | **何もしなくていい。** launch を上げ直すだけ（`--symlink-install`） |
+| ファイルを**追加**した | `colcon build --symlink-install --packages-select <pkg>` |
+| パッケージを追加した | `make bootstrap` |
+| `Dockerfile` / `pyproject.toml` | `make build` してから `make bootstrap` |
+
+### テスト
+
+**実機なしで走ります。** コツは **ROS に依存しないロジックを別モジュールへ切り出す**
+ことです（`cartesian_math.py` / `reach_solver.py` / `bridge_core.py` / `kinematics.py`）。
+
+```bash
+# コンテナ内 /ros2_ws/src/
+python3 -m pytest my_first_pkg -q
+```
+
+> ★ `colcon test` ではなく `python3 -m pytest` を使っています。
+> `ros2 pkg create` が入れる lint テスト 3 つは使っていないので消して構いません。
+
+### ★ 画像を扱うときは `cv_bridge` を使わない
+
+`import` は通りますが、**`imgmsg_to_cv2()` を呼んだ瞬間に Segmentation fault**
+します（実測、exit 139）。`cv_bridge` の C 拡張が apt の numpy 1.26 に対して
+ビルドされているのに対し、このコンテナは lerobot の要求で numpy 2 系を使うためです。
+`cv_bridge/__init__.py` がこの `ImportError` を握り潰すので、**`import` も
+`CvBridge()` の生成も成功してしまいます。**
+
+やっているのは `bytes` を numpy に整形することだけなので自前で書けます
+→ `image_saver.py` の `imgmsg_to_np()`
+
+### つまずきポイント
+
+| 症状 | 原因と対処 |
+| --- | --- |
+| `ros2: command not found` | `docker exec` は ENTRYPOINT を通りません。`/entrypoint.sh` を前置する |
+| `Package '...' not found` | `make bootstrap` を打っていません（`install/` は `.gitignore` 済み） |
+| ビルドしたのに反映されない | `source install/setup.bash` を打ち直す |
+| `ros2 topic echo` に何も出ない | QoS 不一致。センサ系は `qos_profile_sensor_data`、CLI なら `--qos-reliability best_effort` |
+| 画像を扱うノードが SIGSEGV | `cv_bridge`（上記） |
+| アームが `unconfigured` のまま | 実機の姿勢が URDF の可動域の外です。手で範囲内へ戻す |
+| `colcon build` が `can't copy '...'` | `--symlink-install` の壊れたリンク。`make bootstrap` が検出して直す |
+| RViz に見覚えのないロボットが出る | `ROS_DOMAIN_ID` の衝突。`docker ps` で他スタックが動いていないか見る |
 
 ---
 
@@ -389,12 +453,11 @@ trail_SO101/
 
 | # | ドキュメント | 内容 |
 | --- | --- | --- |
-| 1 | **この README** | 起動までの手順、Topic / Service / Action の一覧 |
-| 2 | [`docs/examples.md`](docs/examples.md) | **動くサンプル。** リーチ、逆運動学、キーボード操作 |
+| 1 | **この README** | 起動までの手順、Topic / Service / Action の一覧、ノードの書き方 |
+| 2 | [`docs/examples.md`](docs/examples.md) | **動くサンプル。** ★ 最小構成、画像保存、リーチ、キーボード操作 |
 | 3 | [`docs/internals.md`](docs/internals.md) | **内部処理の仕組み。** 指令がどこを通るか |
-| 4 | [`docs/development.md`](docs/development.md) | ノードの書き方、つまずきポイント集 |
-| 5 | [`docker/robot/README.md`](docker/robot/README.md) | 停止・非常停止・異常終了からの復帰 |
-| 6 | [`examples/README.md`](examples/README.md) | ROS 2 を使わない lerobot 直叩き |
+| 4 | [`docker/robot/README.md`](docker/robot/README.md) | 停止・非常停止・異常終了からの復帰 |
+| 5 | [`examples/README.md`](examples/README.md) | ROS 2 を使わない lerobot 直叩き |
 
 ---
 

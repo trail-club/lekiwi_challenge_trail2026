@@ -18,7 +18,7 @@ depth は 16UC1 [mm] を 0-255 へ正規化したグレースケールにしま�
 
 ★ **`cv_bridge` は使いません。** numpy 2 系では `imgmsg_to_cv2()` が
   SIGSEGV します（import は通るので気付きにくい）。詳細は
-  `docs/development.md`。
+  `README.md`。
 """
 
 from __future__ import annotations

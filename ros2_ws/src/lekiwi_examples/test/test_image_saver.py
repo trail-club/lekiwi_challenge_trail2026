@@ -1,7 +1,7 @@
 """image_saver の ROS に依存しない部分を検証する。
 
 ★ 検証の主眼は `imgmsg_to_np`。`cv_bridge` を使わない理由
-  （numpy 2 で `imgmsg_to_cv2()` が SIGSEGV する。docs/development.md）が
+  （numpy 2 で `imgmsg_to_cv2()` が SIGSEGV する。README.md）が
   ある以上、代替が正しいことは自前で担保しないといけない。
 """
 

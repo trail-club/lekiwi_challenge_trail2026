@@ -19,7 +19,7 @@
 ```
 
 **★ 自分のプログラムもここに置いてください。** 書き方は
-[`../../../docs/development.md`](development.md)。
+[`../README.md`](../README.md)。
 
 ---
 
@@ -109,7 +109,7 @@ depth は 16UC1 [mm] を 0-255 へ正規化したグレースケールです。
 | 論点 | 中身 |
 | --- | --- |
 | **画像は購読しっぱなし** | 最新の 1 枚だけ持ち、変換と保存はサービスが呼ばれた瞬間にやります。撮りたい瞬間にカメラと同期を取らずに済みます |
-| **`cv_bridge` を使わない** | numpy 2 で `imgmsg_to_cv2()` が SIGSEGV します（import は通るので気付きにくい）。`imgmsg_to_np()` を自前で持っています → [`docs/development.md`](../../../docs/development.md) |
+| **`cv_bridge` を使わない** | numpy 2 で `imgmsg_to_cv2()` が SIGSEGV します（import は通るので気付きにくい）。`imgmsg_to_np()` を自前で持っています → [`../README.md`](../README.md) |
 
 1 枚も届いていなければ `success=False` と理由を返します。**古い画像や
 壊れた画像を黙って書きません。**
@@ -127,7 +127,7 @@ message: color の画像がまだ 1 枚も届いていない
 > 最小構成を優先したためです。`--symlink-install` なので書き換えれば
 > 再ビルド無しで効きます。実際に運用するノード（`reach_to_point` /
 > `base_driver` / `teleop_keyboard`）は YAML + `declare_parameter` を使います
-> → [`docs/development.md`](../../../docs/development.md)。
+> → [`../README.md`](../README.md)。
 
 ### 2. リーチ — `map` 上の点へアームを伸ばす
 
@@ -307,4 +307,4 @@ python3 -m pytest lekiwi_examples -q
 | --- | --- |
 | ロボットの起動手順 | [`../../../README.md`](../README.md) |
 | 名前と型の一覧・仕組み | [`../../../docs/internals.md`](internals.md) |
-| 自分でノードを書く | [`../../../docs/development.md`](development.md) |
+| 自分でノードを書く | [`../README.md`](../README.md) |
