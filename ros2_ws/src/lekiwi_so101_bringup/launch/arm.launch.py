@@ -56,6 +56,7 @@ def generate_launch_description():
     xacro_file = share / "urdf" / "lekiwi_so101.urdf.xacro"
 
     backend = LaunchConfiguration("backend")
+    motor_bus_mode = LaunchConfiguration("motor_bus_mode")
     joint_prefix = LaunchConfiguration("joint_prefix")
     usb_port = LaunchConfiguration("usb_port")
     robot_id = LaunchConfiguration("robot_id")
@@ -105,6 +106,7 @@ def generate_launch_description():
             calibration_dir=calibration_dir.perform(context),
             robot_id=robot_id.perform(context),
             backend=backend.perform(context),
+            motor_bus_mode=motor_bus_mode.perform(context),
         )
         return [
             Node(
@@ -122,6 +124,11 @@ def generate_launch_description():
                 "backend",
                 default_value="mock",
                 description="mock: シリアルを開かない / lerobot: 実機の SO-101",
+            ),
+            DeclareLaunchArgument(
+                "motor_bus_mode",
+                default_value="split",
+                description="split: separate ports; shared: canonical IDs 1-9 on one bus",
             ),
             DeclareLaunchArgument(
                 "joint_prefix",
@@ -217,6 +224,7 @@ def generate_launch_description():
                             #   アームの故障をアームだけに閉じ込める。
                             ("shutdown_on_bridge_exit", "false"),
                             ("backend", backend),
+                            ("motor_bus_mode", motor_bus_mode),
                             ("usb_port", usb_port),
                             ("robot_id", robot_id),
                             ("calibration_dir", calibration_dir),

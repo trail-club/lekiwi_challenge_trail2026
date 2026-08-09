@@ -1,14 +1,16 @@
 """ロボット全体を 1 プロセスで起動する launch。
 
     # 実機 (docker/robot のコンテナ内で)
-    ros2 launch lekiwi_so101_bringup robot.launch.py backend:=lerobot robot_id:=my_follower
+    ros2 launch lekiwi_so101_bringup robot.launch.py \
+      motor_bus_mode:=split backend:=lerobot robot_id:=my_follower
 
     # 実機なし (Mac でも動く)
-    ros2 launch lekiwi_so101_bringup robot.launch.py sim:=true
+    ros2 launch lekiwi_so101_bringup robot.launch.py motor_bus_mode:=split sim:=true
 
     # 保存済み地図 + AMCL
-    ros2 launch lekiwi_so101_bringup robot.launch.py backend:=lerobot robot_id:=my_follower \\
-      use_saved_map:=true map_file:=/maps/my_room.yaml
+    ros2 launch lekiwi_so101_bringup robot.launch.py motor_bus_mode:=split \\
+      backend:=lerobot robot_id:=my_follower use_saved_map:=true \\
+      map_file:=/maps/my_room.yaml
 
 ────────────────────────────────────────────────────────────────────────
 起動するもの
@@ -36,7 +38,8 @@
       ros2 run lekiwi_examples teleop_keyboard         # キーボード操作
 
 ★ 停止
-  この launch を Ctrl+C する。アームのトルクが切れて落ちるので、先に
+  この launch を Ctrl+C する。アームのトルクが切れて落ちるので、
+  lekiwi_examples の reach.launch.py も起動している場合は、先に
   `ros2 service call /so101/stow std_srvs/srv/Trigger {}` で畳んでおくこと。
   SIGKILL された場合の復帰は `ros2 run lekiwi_so101_bringup release_all`。
 
@@ -56,12 +59,25 @@ from launch.actions import (
     GroupAction,
     IncludeLaunchDescription,
     LogInfo,
+    OpaqueFunction,
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import AndSubstitution, LaunchConfiguration, NotSubstitution
+from launch.substitutions import (
+    AndSubstitution,
+    LaunchConfiguration,
+    NotSubstitution,
+    PythonExpression,
+)
 
 MOUNT_KEYS = ("x", "y", "z", "roll", "pitch", "yaw")
+
+
+def _validate_motor_bus_mode(context):
+    mode = LaunchConfiguration("motor_bus_mode").perform(context)
+    if mode not in ("split", "shared"):
+        raise RuntimeError("motor_bus_mode must be explicitly set to split or shared")
+    return []
 
 
 def generate_launch_description():
@@ -80,10 +96,25 @@ def generate_launch_description():
     start_rviz = LaunchConfiguration("start_rviz")
 
     backend = LaunchConfiguration("backend")
+    motor_bus_mode = LaunchConfiguration("motor_bus_mode")
     robot_id = LaunchConfiguration("robot_id")
     usb_port = LaunchConfiguration("usb_port")
-    calibration_dir = LaunchConfiguration("calibration_dir")
+    split_calibration_dir = LaunchConfiguration("split_calibration_dir")
+    shared_calibration_dir = LaunchConfiguration("shared_calibration_dir")
     joint_prefix = LaunchConfiguration("joint_prefix")
+
+    arm_port = PythonExpression([
+        "'", lekiwi_port, "' if '", motor_bus_mode,
+        "' == 'shared' else '", usb_port, "'",
+    ])
+    calibration_dir = PythonExpression([
+        "'", shared_calibration_dir, "' if '", motor_bus_mode,
+        "' == 'shared' else '", split_calibration_dir, "'",
+    ])
+    hardware_backend = PythonExpression([
+        "'bridge' if '", motor_bus_mode,
+        "' == 'shared' else 'serial'",
+    ])
 
     wrist_camera = LaunchConfiguration("wrist_camera")
     wrist_camera_name = LaunchConfiguration("wrist_camera_name")
@@ -115,6 +146,11 @@ def generate_launch_description():
                               description="realsense2_camera を起動するか。"
                                           "★ sim:=true では自動的に起動しない"),
         DeclareLaunchArgument("start_rviz", default_value="true"),
+        DeclareLaunchArgument(
+            "motor_bus_mode",
+            description="REQUIRED: split (two ports) or shared (one canonical ID 1-9 bus)",
+        ),
+        OpaqueFunction(function=_validate_motor_bus_mode),
 
         # ───────── ベース ─────────
         DeclareLaunchArgument("lekiwi_port", default_value="/dev/lekiwi"),
@@ -138,8 +174,11 @@ def generate_launch_description():
             description="backend:=lerobot では必須の LeRobot 較正 ID"),
         DeclareLaunchArgument("usb_port", default_value="/dev/so101_follower"),
         DeclareLaunchArgument(
-            "calibration_dir",
+            "split_calibration_dir",
             default_value="/root/.cache/huggingface/lerobot/calibration/robots/so_follower"),
+        DeclareLaunchArgument(
+            "shared_calibration_dir",
+            default_value="/root/.cache/huggingface/lerobot/calibration/robots/lekiwi"),
         DeclareLaunchArgument("joint_prefix", default_value="arm_"),
 
         # ───────── 手首カメラ ─────────
@@ -186,8 +225,9 @@ def generate_launch_description():
                 PythonLaunchDescriptionSource(str(share / "launch" / "arm.launch.py")),
                 launch_arguments=[
                     ("backend", backend),
+                    ("motor_bus_mode", motor_bus_mode),
                     ("robot_id", robot_id),
-                    ("usb_port", usb_port),
+                    ("usb_port", arm_port),
                     ("calibration_dir", calibration_dir),
                     ("joint_prefix", joint_prefix),
                     ("start_rviz", start_rviz),
@@ -209,6 +249,7 @@ def generate_launch_description():
                     PythonLaunchDescriptionSource(str(base_launch_dir / "nav.launch.py")),
                     launch_arguments=[
                         ("port", lekiwi_port),
+                        ("hardware_backend", hardware_backend),
                         ("serial_port", lidar_port),
                         ("start_lidar", start_lidar),
                         ("start_robot_state_publisher", "false"),
@@ -227,6 +268,7 @@ def generate_launch_description():
                         str(base_launch_dir / "nav_with_map.launch.py")),
                     launch_arguments=[
                         ("port", lekiwi_port),
+                        ("hardware_backend", hardware_backend),
                         ("serial_port", lidar_port),
                         ("map_file", map_file),
                         ("start_lidar", start_lidar),
@@ -247,6 +289,7 @@ def generate_launch_description():
                     PythonLaunchDescriptionSource(
                         str(base_launch_dir / "sim_nav.launch.py")),
                     launch_arguments=[
+                        ("hardware_backend", hardware_backend),
                         ("start_robot_state_publisher", "false"),
                         ("start_rviz", "false"),
                     ],

@@ -2,10 +2,12 @@
 #
 #   make build       イメージをビルド
 #   make bootstrap   ★ 初回とパッケージ追加時。上流取得 + colcon build + 静的検査
-#   make up          コンテナを**バックグラウンドで**起動する (compose up -d)。
+#   make up-split / make up-shared
+#                    コンテナを**バックグラウンドで**起動する (compose up -d)。
 #                    bash が上がるだけで、ROS はまだ何も動いていない
 #   make shell       コンテナに入る
-#   make release     ★ 異常終了後にホイールとアームを解放する
+#   make release BUS_MODE=split|shared
+#                    ★ 異常終了後にホイールとアームを解放する
 #   make down        コンテナを停止・削除
 #
 #   make help        委譲先の全ターゲットを表示する
@@ -19,10 +21,10 @@
 #   ここへ書き写すと二重管理になり、必ず片方が古くなる。**丸ごと委譲する。**
 #
 # ■ 停止 (詳細は docker/robot/README.md)
-#   通常  : make run の端末で Ctrl+C。その前に make stow
+#   通常  : アームを安全な低い姿勢にしてからrun端末でCtrl+C
 #   非常時: **物理スイッチを切る。** docker kill は使わない
 #           (SIGKILL では停止処理が走らず、ホイールは最後の指令速度で回り続ける)
-#   異常終了からの復帰: make release
+#   異常終了からの復帰: make release BUS_MODE=split|shared
 
 # ★ 相対パスで書かないこと。`make -f /path/to/trail_SO101/Makefile build` のように
 #   別のディレクトリから呼ばれても壊れないよう、この Makefile 自身の場所から解く。
@@ -53,16 +55,17 @@ help:
 	@echo ''
 	@echo '  make build       イメージをビルド'
 	@echo '  make bootstrap   ★ 初回とパッケージ追加時 (上流取得 + colcon build)'
-	@echo '  make up          コンテナをバックグラウンドで起動 (compose up -d)'
-	@echo '  make run         ★ 実機で launch を起動する (前面。Ctrl+C で止める)'
+	@echo '  make up-split / up-shared  コンテナだけを起動 (compose up -d)'
+	@echo '  make run-split   ★ 7.4Vアーム/12Vベースの2バス機を前面起動'
+	@echo '  make run-shared  ★ 全モータ12Vの1バス機を前面起動'
 	@echo '                   ★ up と違い前面。Ctrl+C が届かないと停止処理が走らない'
-	@echo '  make mock        実機に触れないモック構成で起動 (Mac 可)'
+	@echo '  make mock-split / mock-shared  実機に触れない構成 (Mac 可)'
 	@echo '  make shell       コンテナに入る'
-	@echo '  make stow        アームを低く畳む (★ 停止前に必ず実行する)'
+	@echo '  make stow        reach.launch.py起動中にアームを低く畳む'
 	@echo '  make check       ROS グラフの不変条件を確認'
 	@echo '  make save-map    現在の地図を保存'
-	@echo '  make release     ★ 異常終了後にホイールとアームを解放する'
-	@echo '  make release-check  トルクが入っているかを読むだけ (何も書かない)'
+	@echo '  make release BUS_MODE=...       ★ 異常終了後に全解放'
+	@echo '  make release-check BUS_MODE=... トルクを読むだけ (何も書かない)'
 	@echo '  make down        コンテナを停止・削除'
 	@echo '  make logs        ログを追う'
 	@echo ''
@@ -71,7 +74,7 @@ help:
 	@echo ''
 	@echo '★ 非常停止は物理スイッチだけ。docker kill は使わないこと。'
 
-# コマンドラインで渡した変数 (make run ROBOT_ID=foo) は MAKEFLAGS 経由で
+# コマンドラインで渡した変数 (make run-shared LEKIWI_ROBOT_ID=foo) は MAKEFLAGS 経由で
 # 委譲先にもそのまま届く。
 #
 # ★ --no-print-directory を付ける。付けないと 1 コマンドごとに

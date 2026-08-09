@@ -69,6 +69,7 @@ def generate_launch_description():
     xacro_file = description_share / "urdf" / "lekiwi_base.urdf.xacro"
 
     port = LaunchConfiguration("port")
+    hardware_backend = LaunchConfiguration("hardware_backend")
     serial_port = LaunchConfiguration("serial_port")
     start_rviz = LaunchConfiguration("start_rviz")
     start_robot_state_publisher = LaunchConfiguration("start_robot_state_publisher")
@@ -87,6 +88,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("port", default_value="/dev/lekiwi",
                               description="LeKiwiベースのシリアルポート"),
+        DeclareLaunchArgument("hardware_backend", default_value="serial"),
         DeclareLaunchArgument("serial_port", default_value="/dev/ttyUSB0",
                               description="RPLIDAR A1 のシリアルポート (start_lidar:=true 時のみ使用)"),
         DeclareLaunchArgument("start_rviz", default_value="true"),
@@ -134,7 +136,10 @@ def generate_launch_description():
             executable="base_driver",
             name="lekiwi_base_driver",
             output="screen",
-            parameters=[base_params, {"port": port}],
+            parameters=[
+                base_params,
+                {"port": port, "hardware_backend": hardware_backend},
+            ],
         ),
 
         # /scan を -60°〜+60° (右車輪〜左車輪の前方アーク) にフィルタリングして

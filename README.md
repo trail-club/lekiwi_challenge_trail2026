@@ -3,6 +3,16 @@
 **LeKiwi 移動ベースに SO-101 アームを載せた実機ロボット**を、ROS 2 Jazzy と
 lerobot で動かすリポジトリです。
 
+モーターバスは次の2構成を明示的に選択します。自動判定はしません。
+
+| モード | アーム | ベース | 起動コマンド |
+| --- | --- | --- | --- |
+| `split` | 7.4V、ID 1〜6、`/dev/so101_follower` | 12V、ID 7〜9、`/dev/lekiwi` | `make run-split SO101_ROBOT_ID=my_follower` |
+| `shared` | 12V、ID 1〜6 | 12V、ID 7〜9、両方とも `/dev/lekiwi` | `make run-shared LEKIWI_ROBOT_ID=my_lekiwi` |
+
+sharedの車輪IDは `7=left, 8=back, 9=right` 固定です。split機の7.4Vアームを
+12Vのベースバスへ接続してはいけません。
+
 ## 目次
 
 1. [リポジトリを取得する](#1-リポジトリを取得する)
@@ -86,10 +96,11 @@ sudo cp docker/rplidar_ros2/99-rplidar.rules    /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-**④ 3 つとも見えることを確認する**
-ros
+**④ 必要なデバイスが見えることを確認する**
+
 ```bash
-ls -l /dev/lekiwi /dev/so101_follower /dev/rplidar
+ls -l /dev/lekiwi /dev/rplidar
+ls -l /dev/so101_follower  # split機だけ必要
 ```
 
 ### `.env` を用意する
@@ -99,7 +110,7 @@ cp docker/robot/.env.example docker/robot/.env
 getent group dialout        # 出力の 3 番目の数字が DIALOUT_GID（Ubuntu なら 20）
 ```
 
-`DIALOUT_GID` が 20 で、④ の 3 つが見えているなら**編集不要**です。
+`DIALOUT_GID` が 20 で、④ のデバイスが見えているなら**編集不要**です。
 違うときだけ `.env` を書き換えてください。
 
 ---
@@ -115,12 +126,19 @@ sudo apt-get install -y ffmpeg       # lerobot が要求する（Mac は brew in
 # リポジトリ直下で
 cd lerobot_examples
 uv sync                              # ★ 初回のみ。lerobot を入れる
-uv run lerobot-find-port             # /dev/so101_follower が出るか確認
+uv run lerobot-find-port             # 使用するモータードライバが出るか確認
 
+# split機（7.4Vアーム、6モーター）
 uv run lerobot-calibrate \
   --robot.type=so101_follower \
   --robot.port=/dev/so101_follower \
   --robot.id=my_follower
+
+# shared機（全モータ12V、ID 1〜9）
+uv run lerobot-calibrate \
+  --robot.type=lekiwi \
+  --robot.port=/dev/lekiwi \
+  --robot.id=my_lekiwi
 ```
 
 画面の指示に従って各関節を可動域の端まで動かします。終わるとここに JSON が
@@ -130,13 +148,18 @@ uv run lerobot-calibrate \
 ```bash
 ls ~/.cache/huggingface/lerobot/calibration/robots/so_follower/
 #    -> my_follower.json
+ls ~/.cache/huggingface/lerobot/calibration/robots/lekiwi/
+#    -> my_lekiwi.json
 ```
+
+shared機は9モーターを接続して新規較正します。split用の6モーターJSONを変換・流用
+しません。
 
 ---
 
 ## 5. ワークスペースを初期化する
 
-```bash\
+```bash
 make bootstrap
 ```
 
@@ -163,17 +186,13 @@ bootstrapがuv syncとcolcon build --symlink-installをします。
 よく使うコマンドはMakefileにまとめられています。
 
 ```bash
-make up # コンテナが立ち上がる
-make shell # コンテナの中のシェルへ移動
+make run-split SO101_ROBOT_ID=my_follower
+make run-shared LEKIWI_ROBOT_ID=my_lekiwi
 ```
 
-コンテナの中で
-```bash
-ros2 launch lekiwi_so101_bringup robot.launch.py \
-    backend:=lerobot robot_id:=my_follower
-```
-
-`robot_id` は 4 章の `--robot.id` に与えた名前です。
+どちらもコンテナを起動した後、`motor_bus_mode` と4章の較正IDを渡して
+`robot.launch.py` を前面実行します。コンテナだけ起動する場合は
+`make up-split` / `make up-shared`、シェルへ入る場合は `make shell` です。
 
 ### 終了方法
 
@@ -192,7 +211,8 @@ make down
 robot.launchが実行中だと失敗することに注意してください。
 
 ```bash
-make release
+make release BUS_MODE=split   # split機
+make release BUS_MODE=shared  # shared機
 ```
 
 ---
@@ -420,17 +440,18 @@ lekiwi_examples/example_sequence.py, lekiwi_examples/image_saver.pyを参考に�
 
 | サブシステム | ハードウェア | ポート |
 | --- | --- | --- |
-| **アーム** | Feetech STS3215 × 6（ID 1–6）、**7.4V** | `/dev/so101_follower` |
+| **アーム** | Feetech STS3215 × 6（ID 1–6） | split: 7.4V `/dev/so101_follower` / shared: 12V `/dev/lekiwi` |
 | **ベース** | Feetech STS3215 × 3（ID 7/8/9）、**12V**、3輪オムニ | `/dev/lekiwi` |
 | **LiDAR** | RPLIDAR A1M8 | `/dev/rplidar` |
 | **RealSense** | D435i（アームの手首に載せる） | USB |
 
-> ★ **アームとホイールを同じシリアルバスに繋がないこと。**
+> ★ split機では**アームとホイールを同じシリアルバスに繋がないこと。**
 > どちらも STS3215 の 1 Mbps で ID も分かれているため**物理的には繋がってしまい**、
 > 繋いだ瞬間に 12V が 7.4V のアームサーボに掛かって壊れます。
 
 > ★ **実機を繋げるのは Linux だけです。** macOS の Docker はシリアル / USB
-> デバイスをコンテナへ渡せません。Mac では `make mock`（実機に触れない構成）
+> デバイスをコンテナへ渡せません。Mac では `make mock-split` または
+> `make mock-shared`（実機に触れない構成）
 > までしか実行できません。
 
 ---
@@ -442,10 +463,12 @@ trail_SO101/
 ├── docker/
 │   ├── robot/                  ★ 統合スタック。ふだん使うのはこれだけ
 │   │   ├── Dockerfile          1 イメージ（ROS + Nav2 + LeRobot + RealSense）
-│   │   ├── compose.yaml        1 コンテナ（実機）
+│   │   ├── compose.yaml        共通設定
+│   │   ├── compose.split.yaml  split機の2モーターポート
+│   │   ├── compose.shared.yaml shared機の1モーターポート
 │   │   ├── compose.mock.yaml   1 コンテナ（実機に触れない）
 │   │   ├── bootstrap.sh        上流の配置 + colcon build + 静的検査
-│   │   └── Makefile            build / bootstrap / run / mock / check / release
+│   │   └── Makefile            build / bootstrap / run-* / mock-* / check / release
 │   ├── so101_ros2/             以下は 1 サブシステムだけ切り分けたいとき用
 │   ├── lekiwi_base_ros2/
 │   ├── rplidar_ros2/
@@ -454,6 +477,7 @@ trail_SO101/
 │   ├── lekiwi_examples/        ロボットの上で動くもの。リーチ、逆運動学、キーボード操作
 │   ├── so101_bringup/          アーム。LeRobot ブリッジ、較正（ハードウェアに触る側）
 │   ├── lekiwi_base_bringup/    ベース。ドライバ、オドメトリ、スキャン処理
+│   ├── lekiwi_hardware_interfaces/ sharedバス内部用WheelCommand
 │   ├── lekiwi_so101_bringup/   合成のみ。結合 URDF、robot.launch.py、release_all
 │   ├── lekiwi_description/     ベースの URDF
 │   ├── rplidar_bringup/        LiDAR

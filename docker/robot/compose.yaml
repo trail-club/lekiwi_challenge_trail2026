@@ -3,8 +3,9 @@
 #   cp .env.example .env     # 先に実機に合わせて編集する
 #   make build
 #   make bootstrap           # 初回とパッケージ追加時
-#   make up                  # コンテナを起動する (bash が上がるだけ)
-#   make run                 # コンテナに入って launch を叩く
+#   make up-split/up-shared  # コンテナを起動する (bash が上がるだけ)
+#   make run-split           # 2 バス機
+#   make run-shared          # 12V・1 バス機
 #
 # ■ なぜ 1 コンテナなのか
 #   以前は 4 コンテナに分けていた。理由は「アームとベースで安全論理が逆で、
@@ -33,11 +34,11 @@
 #   通常  : launch を Ctrl+C する (アームのトルク OFF + ホイール停止)
 #   非常時: **物理スイッチを切る。** docker kill は使わない
 #           (SIGKILL では停止処理が走らず、ホイールは最後の指令速度で回り続ける)
-#   異常終了からの復帰: make release
+#   異常終了からの復帰: make release BUS_MODE=split|shared
 #
 # ■ 起動前チェック
-#   * .env の 3 つのデバイスが実機に合っていること (udev ルール必須)
-#   * ★ アームは 7.4V、ホイールは 12V。同一シリアルバスへ繋がないこと
+#   * .env のデバイス名が実機に合っていること (udev ルール必須)
+#   * split: アーム7.4V/ホイール12V。shared: 全モータ12V
 #   * URDF の arm_mount 位置が実測値に更新済みであること
 
 services:
@@ -57,7 +58,7 @@ services:
     #   特権で動くことになる (承知のうえ)。
     privileged: true
 
-    # ★ シリアル3本は devices: ではなく bind mount で渡す。
+    # ★ モータ用デバイスは compose.split/shared.yaml でだけ bind mount する。
     #
     # 分割構成 (docker/lekiwi_so101_bringup) では、シリアル用コンテナが
     # 非 privileged なので devices: の名前付き割り当てがそのまま機能する。
@@ -105,9 +106,7 @@ services:
     volumes:
       # privileged コンテナでは devices: の /dev 宛先が作られないため、
       # シリアルは bind mount で既存の安定名をそのまま渡す。
-      - ${LEKIWI_DEVICE:-/dev/lekiwi}:${LEKIWI_DEVICE:-/dev/lekiwi}
       - ${RPLIDAR_DEVICE:-/dev/rplidar}:${RPLIDAR_DEVICE:-/dev/rplidar}
-      - ${SO101_DEVICE:-/dev/so101_follower}:${SO101_DEVICE:-/dev/so101_follower}
       # ★ ROS ワークスペースはホストからマウントする。イメージにパッケージを
       #   焼き込まないので、lekiwi_description も so_arm101_description も
       #   ここから解決される。初回とパッケージ追加時は make bootstrap。
@@ -124,9 +123,9 @@ services:
       - ${MAP_DIR:-$HOME/maps}:/maps
       # LeRobot の較正値。実体はサーボの EEPROM で、この JSON はその控え。
       # 較正を実行した PC のホームにしか無い。
-      - ${HOME}/.cache/huggingface/lerobot/calibration/robots/so_follower:/root/.cache/huggingface/lerobot/calibration/robots/so_follower:ro
+      - ${HOME}/.cache/huggingface/lerobot/calibration/robots:/root/.cache/huggingface/lerobot/calibration/robots:ro
 
-    # ★ bash を起動するだけ。launch は make run か docker compose exec で叩く。
+    # ★ bash を起動するだけ。launch は専用 make target から前面起動する。
     command: ["bash"]
     stdin_open: true
     tty: true

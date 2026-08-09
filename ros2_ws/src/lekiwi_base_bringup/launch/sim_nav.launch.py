@@ -58,6 +58,7 @@ def generate_launch_description():
     xacro_file = description_share / "urdf" / "lekiwi_base.urdf.xacro"
 
     start_rviz = LaunchConfiguration("start_rviz")
+    hardware_backend = LaunchConfiguration("hardware_backend")
     start_robot_state_publisher = LaunchConfiguration("start_robot_state_publisher")
     start_slam = LaunchConfiguration("start_slam")
     start_nav2 = LaunchConfiguration("start_nav2")
@@ -81,6 +82,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument("start_rviz", default_value="true"),
+        DeclareLaunchArgument("hardware_backend", default_value="serial"),
         # /robot_description は TRANSIENT_LOCAL / depth 1 なので、publisher が
         # 2 つあると後から繋いだ購読者がどちらの latch を掴むか非決定になる
         # (CLAUDE.md の「RViz に別のロボットが出る」症状)。アームを載せた
@@ -130,7 +132,10 @@ def generate_launch_description():
             executable="base_driver",
             name="lekiwi_base_driver",
             output="screen",
-            parameters=[base_params, {"dry_run": True}],
+            parameters=[
+                base_params,
+                {"dry_run": True, "hardware_backend": hardware_backend},
+            ],
         ),
 
         Node(

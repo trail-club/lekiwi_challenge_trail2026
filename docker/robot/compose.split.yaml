@@ -1,0 +1,6 @@
+# 分割バス機: 7.4V アームと 12V ホイールを別々のドライバで所有する。
+services:
+  robot:
+    volumes:
+      - ${LEKIWI_DEVICE:-/dev/lekiwi}:${LEKIWI_DEVICE:-/dev/lekiwi}
+      - ${SO101_DEVICE:-/dev/so101_follower}:${SO101_DEVICE:-/dev/so101_follower}

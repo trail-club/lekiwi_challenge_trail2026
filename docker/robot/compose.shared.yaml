@@ -1,0 +1,5 @@
+# 共有バス機: 全モータ 12V、canonical ID 1..9 を /dev/lekiwi で所有する。
+services:
+  robot:
+    volumes:
+      - ${LEKIWI_DEVICE:-/dev/lekiwi}:${LEKIWI_DEVICE:-/dev/lekiwi}

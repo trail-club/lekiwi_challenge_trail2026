@@ -45,6 +45,18 @@ ros2 run lekiwi_examples teleop_keyboard         # ベース + アームをキ�
 
 ---
 
+## モータバスの2モード
+
+`robot.launch.py` は `motor_bus_mode:=split|shared` を必須とし、自動判定しません。
+
+| モード | シリアル所有者 | 電圧・較正 |
+| --- | --- | --- |
+| split | arm bridgeが`/dev/so101_follower`、base_driverが`/dev/lekiwi` | アーム7.4V/車輪12V、`robots/so_follower` |
+| shared | arm bridgeだけが`/dev/lekiwi`を開く。base_driverは内部topicへtickを送る | 全モータ12V、`robots/lekiwi`の9モーターJSON |
+
+sharedの起動順は、全ID接続確認、全トルクOFF、アーム現在位置のラッチ、
+車輪ゼロ、ID 1〜6を位置モード、ID 7〜9を速度モード、全トルクONです。
+
 ## アームはどう動くのか
 
 いちばん分かりにくいところです。**指令はトピックを 2 回経由します。**
@@ -62,7 +74,7 @@ ros2 run lekiwi_examples teleop_keyboard         # ベース + アームをキ�
 ④ lerobot_bridge               … rad → deg、gripper を 0-100% に変換
         │  LeRobot SO101Follower.send_action()
         ▼
-⑤ シリアル /dev/so101_follower  … Feetech STS3215 × 6、1 Mbps
+⑤ split: /dev/so101_follower / shared: /dev/lekiwiのID 1〜6
 ```
 
 戻りは逆向きです。
@@ -121,11 +133,12 @@ ros2 run lekiwi_examples teleop_keyboard         # ベース + アームをキ�
 /cmd_vel (geometry_msgs/Twist)
     │
     ▼
-base_driver
+base_driver（運動学・odom・TFは両モード共通）
     │  3輪オムニの逆運動学（kinematics.py）
     │  vx, vy, wz  →  車輪3個の角速度  →  tick
     ▼
-StsBus.sync_write_velocity()   … Goal_Velocity を 3 個へ一括送信
+split: StsBus.sync_write_velocity()
+shared: /lekiwi/hardware_wheel_commands → lerobot_bridge
     │
     ▼
 シリアル /dev/lekiwi   … STS3215 × 3（ID 7/8/9）、12V、速度モード
@@ -299,8 +312,8 @@ lekiwi_base_driver        … 車輪 3 関節
 > ベースのドライバも道連れになり、ホイールが回り続けます。
 > **非常停止は物理スイッチだけ**です。
 >
-> 異常終了からの復帰は `ros2 run lekiwi_so101_bringup release_all`
-> （`make release`）。**アームもホイールもこれ 1 つ**で解放する。
+> 異常終了からの復帰は `make release BUS_MODE=split|shared`。
+> **アームもホイールもこれ 1 つ**で解放する。
 >
 > ★ **コンテナを落とす必要はない。** 止まっている必要があるのは launch だけで、
 > いちばん多い「launch だけ落ちてコンテナは生きている」場合はそのまま叩ける。
