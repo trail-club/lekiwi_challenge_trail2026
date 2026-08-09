@@ -1,8 +1,8 @@
 """異常終了したあとにホイールとアームを解放するコマンド。
 
-    ros2 run lekiwi_so101_bringup release_all
-    ros2 run lekiwi_so101_bringup release_all --yes --only wheels
-    ros2 run lekiwi_so101_bringup release_all --dry-run   # 読むだけ。何も書かない
+    ros2 run lekiwi_so101_bringup release_all --bus-mode split
+    ros2 run lekiwi_so101_bringup release_all --bus-mode shared --yes --only wheels
+    ros2 run lekiwi_so101_bringup release_all --bus-mode shared --dry-run
 
 ────────────────────────────────────────────────────────────────────────
 なぜこれが要るのか
@@ -48,6 +48,7 @@ import sys
 from lekiwi_base_bringup.sts_bus import StsBus, StsBusError
 
 WHEEL_PORT = "/dev/lekiwi"
+SHARED_PORT = "/dev/lekiwi"
 WHEEL_IDS = [7, 8, 9]
 
 ARM_PORT = "/dev/so101_follower"
@@ -229,9 +230,81 @@ def confirm(assume_yes: bool) -> bool:
     return answer in ("y", "yes")
 
 
+def release_shared_bus(
+    port: str,
+    *,
+    do_wheels: bool,
+    do_arm: bool,
+    read_only: bool,
+    assume_yes: bool,
+) -> list[Outcome]:
+    """Open the shared nine-motor bus once and release only selected ID groups."""
+    outcomes = []
+    wheel_outcome = Outcome("ホイール", port, WHEEL_IDS) if do_wheels else None
+    arm_outcome = Outcome("アーム", port, ARM_IDS) if do_arm else None
+    for outcome in (wheel_outcome, arm_outcome):
+        if outcome is not None:
+            outcome.read_only = read_only
+            outcomes.append(outcome)
+
+    reason = diagnose_port(port)
+    if reason is not None:
+        for outcome in outcomes:
+            outcome.error = reason
+        return outcomes
+
+    bus = StsBus(port, ARM_IDS + WHEEL_IDS, baudrate=BAUDRATE)
+    try:
+        bus.connect()
+    except Exception as exc:  # noqa: BLE001
+        message = f"{type(exc).__name__}: {exc}"
+        bus.close()
+        for outcome in outcomes:
+            outcome.error = message
+        return outcomes
+
+    try:
+        if read_only:
+            if wheel_outcome is not None:
+                wheel_outcome.torque = bus.read_torque_enable(WHEEL_IDS)
+            if arm_outcome is not None:
+                arm_outcome.torque = bus.read_torque_enable(ARM_IDS)
+            return outcomes
+
+        # The arm IDs must never receive Goal_Velocity. Stop and verify the
+        # wheel subset before waiting for any arm-drop confirmation.
+        if wheel_outcome is not None:
+            try:
+                bus.stop(WHEEL_IDS)
+                bus.disable_torque(WHEEL_IDS)
+                wheel_outcome.torque = bus.read_torque_enable(WHEEL_IDS)
+            except Exception as exc:  # noqa: BLE001
+                wheel_outcome.error = f"{type(exc).__name__}: {exc}"
+
+        if arm_outcome is not None:
+            if not confirm(assume_yes):
+                arm_outcome.error = "操作者がアームの解放を中止しました"
+                arm_outcome.torque = bus.read_torque_enable(ARM_IDS)
+                return outcomes
+            try:
+                bus.disable_torque(ARM_IDS)
+                arm_outcome.torque = bus.read_torque_enable(ARM_IDS)
+            except Exception as exc:  # noqa: BLE001
+                arm_outcome.error = f"{type(exc).__name__}: {exc}"
+        return outcomes
+    finally:
+        bus.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="異常終了後にホイールとアームを解放する (ROS を使わない)",
+    )
+    parser.add_argument(
+        "--bus-mode",
+        choices=("split", "shared"),
+        required=True,
+        help="REQUIRED: split は2ポート、shared は canonical ID 1..9 の1ポート",
     )
     parser.add_argument(
         "--only",
@@ -241,6 +314,7 @@ def main() -> None:
     )
     parser.add_argument("--wheel-port", default=WHEEL_PORT)
     parser.add_argument("--arm-port", default=ARM_PORT)
+    parser.add_argument("--shared-port", default=SHARED_PORT)
     parser.add_argument(
         "--yes", action="store_true", help="アームが落ちる確認をスキップする"
     )
@@ -255,27 +329,33 @@ def main() -> None:
     do_wheels = args.only in ("both", "wheels")
     do_arm = args.only in ("both", "arm")
 
-    # ★ --dry-run では確認を求めない。何も書かないのでアームは落ちない。
-    if do_arm and not args.dry_run and not confirm(args.yes):
-        sys.exit(1)
-
     outcomes: list[Outcome] = []
-    # ★ 順序が重要。走っているホイールを先に止める。アームの確認で手間取っている
-    #   間も機体は動き続けるので、ホイールを後回しにしない。
-    if do_wheels:
-        outcomes.append(
-            release_bus(
-                "ホイール", args.wheel_port, WHEEL_IDS,
-                zero_velocity=True, read_only=args.dry_run,
-            )
+    if args.bus_mode == "shared":
+        outcomes = release_shared_bus(
+            args.shared_port,
+            do_wheels=do_wheels,
+            do_arm=do_arm,
+            read_only=args.dry_run,
+            assume_yes=args.yes,
         )
-    if do_arm:
-        outcomes.append(
-            release_bus(
-                "アーム", args.arm_port, ARM_IDS,
-                zero_velocity=False, read_only=args.dry_run,
+    else:
+        # ★ 順序が重要。both では確認入力より先にホイールを停止する。
+        if do_wheels:
+            outcomes.append(
+                release_bus(
+                    "ホイール", args.wheel_port, WHEEL_IDS,
+                    zero_velocity=True, read_only=args.dry_run,
+                )
             )
-        )
+        if do_arm:
+            if not args.dry_run and not confirm(args.yes):
+                sys.exit(1)
+            outcomes.append(
+                release_bus(
+                    "アーム", args.arm_port, ARM_IDS,
+                    zero_velocity=False, read_only=args.dry_run,
+                )
+            )
 
     print()
     for outcome in outcomes:

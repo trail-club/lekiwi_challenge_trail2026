@@ -3,8 +3,8 @@
 LiDAR / SLAM / Nav2 / SO-101 アーム / 手首カメラ（RealSense）を **1 つのイメージ、
 1 つのコンテナ、1 つの launch** で動かす。
 
-`docker/lekiwi_so101_bringup`（4 コンテナ構成）と同じ機能を持つ。
-**通常の運用はこちらを使う。** 旧構成は単体デバッグ用に残してある。
+旧4コンテナ構成を置き換える正規入口です。サブシステム単体のDocker構成は
+切り分け用途に残しています。
 
 ## なぜ 1 つにまとめたか
 
@@ -28,7 +28,7 @@ LiDAR / SLAM / Nav2 / SO-101 アーム / 手首カメラ（RealSense）を **1 �
   特権で動くことになる
 - **イメージが大きい。** 旧 so101 4.96GB / lekiwi-base 4.75GB。共通レイヤがあるので
   単純合計にはならない
-- **停止方針が 1 つになる。** それを補うのが `make release`（後述）
+- **停止方針が 1 つになる。** それを補うのが `make release BUS_MODE=...`（後述）
 
 ## 構成
 
@@ -46,16 +46,22 @@ LiDAR / SLAM / Nav2 / SO-101 アーム / 手首カメラ（RealSense）を **1 �
 
 | コンテナ | イメージ | 中身 |
 | --- | --- | --- |
-| `robot` | `local/lekiwi-so101:jazzy` | 全部（RSP / base_driver / sllidar / slam / Nav2 / LeRobot ブリッジ / ros2_control / リーチ / RealSense / RViz） |
+| `robot` | `local/lekiwi-so101:jazzy` | ロボット本体（RSP / base_driver / sllidar / slam / Nav2 / LeRobotブリッジ / ros2_control / RealSense / RViz）。リーチ等のアプリは別起動 |
 
 ## 環境構築
 
 ```bash
 cd docker/robot
 cp .env.example .env      # ★ 先に実機に合わせて編集する
+make udev-dry-run BUS_MODE=shared
+make install-udev BUS_MODE=shared  # .env の LEKIWI_SERIAL からホストルールを生成
 make build
 make bootstrap            # ★ 初回とパッケージ追加時。上流取得 + colcon build + 静的検査
 ```
+
+split機では `.env` の `LEKIWI_SERIAL` と `SO101_SERIAL` を設定し、
+`make install-udev BUS_MODE=split` を使います。機体固有のシリアルを追跡対象の
+`.rules` へ直接書かないでください。
 
 `make bootstrap` は `ros2_ws` をホストからマウントしたまま `colcon build
 --symlink-install` する。成果物はホスト側の `ros2_ws/build`・`install` に残るので、
@@ -64,17 +70,33 @@ make bootstrap            # ★ 初回とパッケージ追加時。上流取得
 ## 動かし方
 
 ```bash
-make run       # 実機。前面で launch が走る。★ Ctrl+C で止める
-make mock      # 実機に触れない（Mac 可）
+make run-split SO101_ROBOT_ID=my_follower
+make run-shared LEKIWI_ROBOT_ID=my_lekiwi
+make mock-split
+make mock-shared
 ```
 
-`make run` の実体:
+splitは `robots/so_follower/<SO101_ROBOT_ID>.json`、sharedは
+`robots/lekiwi/<LEKIWI_ROBOT_ID>.json` を使います。shared較正は既存の6軸JSONを
+変換せず、全モータ12V・ID 1〜9を接続した状態で次のように新規作成します。
 
 ```bash
-docker compose up -d                     # bash が上がるだけ
+cd ../../lerobot_examples
+uv sync  # 初回のみ
+uv run lerobot-calibrate \
+  --robot.type=lekiwi --robot.id=my_lekiwi --robot.port=/dev/lekiwi
+```
+
+sharedの固定配置は `7=left, 8=back, 9=right` です。異なるIDの較正JSONは起動時に
+拒否されます。
+
+`make run-shared` の実体（splitは2ポートをmount）:
+
+```bash
+docker compose -f compose.yaml -f compose.shared.yaml up -d
 docker compose exec -it robot /entrypoint.sh \
   ros2 launch lekiwi_so101_bringup robot.launch.py \
-    backend:=lerobot robot_id:=my_follower
+    motor_bus_mode:=shared backend:=lerobot robot_id:=my_lekiwi
 ```
 
 **コンテナは bash を起動するだけで、launch は人が手で叩く。** 理由は 2 つ。
@@ -87,7 +109,8 @@ docker compose exec -it robot /entrypoint.sh \
 > `docker compose down` が SIGTERM を送るのは **PID 1 だけ**で、
 > `exec` した launch には**届かず SIGKILL される**（実測で確認）。
 > つまり **トルクが入ったまま残る**。
-> 必ず launch を `Ctrl+C` してから `make down` すること。復帰は `make release`。
+> 必ず launch を `Ctrl+C` してから `make down` すること。復帰は
+> `make release BUS_MODE=split|shared`。
 
 ros2 コマンドを使うときは別端末で:
 
@@ -99,6 +122,7 @@ make shell        # docker compose exec -it robot bash
 
 | 引数 | 既定 | 意味 |
 | --- | --- | --- |
+| `motor_bus_mode` | **既定なし・必須** | `split`（2ポート）/ `shared`（1ポート、全12V、ID 1〜9） |
 | `sim` | `false` | `true` でシリアルも LiDAR も開かない（`base_driver` は dry_run、スキャンは `fake_scan`） |
 | `backend` | `mock` | `lerobot` で実機のアーム。`sim` とは独立 |
 | `robot_id` | （空） | `backend:=lerobot` では必須の LeRobot 較正 ID |
@@ -111,10 +135,15 @@ make shell        # docker compose exec -it robot bash
 **★ 順番を守ること。正常終了でトルクが切れてアームが落ちる。**
 
 ```bash
-make stow      # 1. アームを低く畳む
-# 2. make run の端末で Ctrl+C
+# 1. reach.launch.pyを起動している場合、アームを低く畳む
+make stow
+# 2. アームを支え、make run-split/shared の端末で Ctrl+C
 make down      # 3. コンテナを片付ける
 ```
+
+`robot.launch.py` 単独では `/so101/stow` を提供しません。`make stow` はサービスが
+無ければ直ちにエラーにします。その場合は使用中のアプリケーションまたは
+ros2_controlでアームを安全な低い姿勢へ移してから停止してください。
 
 ## ★ 非常停止は物理スイッチだけ
 
@@ -127,8 +156,8 @@ make down      # 3. コンテナを片付ける
 | やりたいこと | 正しい手段 |
 | --- | --- |
 | いますぐ全部止めたい | **物理スイッチ（電源）を切る** |
-| ソフト的に安全に止めたい | `make stow` → launch を `Ctrl+C` |
-| 走り出したホイールだけ止めたい | **`make release-wheels`**（コンテナは落とさなくてよい） |
+| ソフト的に安全に止めたい | アームを低くする（reach起動中なら `make stow`）→ launchを `Ctrl+C` |
+| 走り出したホイールだけ止めたい | **`make release-wheels BUS_MODE=split|shared`** |
 
 ## ★ 異常終了したとき何が起きるか
 
@@ -137,13 +166,15 @@ make down      # 3. コンテナを片付ける
 
 | 経路 | アームのトルク | ホイール |
 | --- | --- | --- |
-| `Ctrl+C` / SIGTERM / Python 例外 | **OFF → 支えが無ければ落ちる** | 速度ゼロ + トルク OFF |
+| `Ctrl+C` / SIGTERM | **OFF → 支えが無ければ落ちる** | 速度ゼロ + トルク OFF |
+| shared bridgeのPython例外 | **OFF → 支えが無ければ落ちる** | 速度ゼロ → 全IDトルクOFF |
 | **SIGKILL**（`docker kill` / OOM / コンテナ強制削除） | **ON のまま → 凍る** | **最後の指令速度で回り続ける** |
 
 - アーム: `disable_torque_on_disconnect=True` で接続し、`disconnect()` を
   `main()` の `finally` から呼ぶ（`so101_bringup/lerobot_backend.py`）
-- ベース: `safe_stop()` が `bus.stop()` → `disable_torque()`。これも `finally`
-  （`lekiwi_base_bringup/base_driver.py`）
+- splitのベース: `safe_stop()` が `bus.stop()` → `disable_torque()`。これも `finally`
+- sharedのベース: bridgeへゼロ指令を送り、最終停止と全IDのトルクOFFは
+  共有bridgeの `disconnect()` が保証する
 - **STS3215 にコマンドウォッチドッグは無い。** プロセスが消えてもサーボは
   最後に受け取った `Goal_Velocity` を保持し続ける
 
@@ -152,13 +183,13 @@ make down      # 3. コンテナを片付ける
 **★ コンテナは落とさなくてよい。** 止まっている必要があるのは launch だけ。
 
 ```bash
-make release-check   # 読むだけ。いまトルクが入っているか
-make release         # ★ アームもホイールもこれ 1 つで解放する
-make release-wheels  # ホイールだけ（アームは落ちない）
+make release-check BUS_MODE=shared
+make release BUS_MODE=shared
+make release-wheels BUS_MODE=shared
 ```
 
 いちばん多い故障は「**launch だけが落ちて、コンテナは生きている**」で、
-そのときシリアルポートは空いている。`make release` はコンテナが生きていれば
+そのときシリアルポートは空いている。`make release BUS_MODE=...` はコンテナが生きていれば
 その中で `exec`、死んでいれば使い捨てコンテナで実行するので、
 **どちらの状態でも同じ 1 コマンドで通る**。
 
@@ -173,13 +204,14 @@ make release-wheels  # ホイールだけ（アームは落ちない）
 >    先に launch を止めてから実行すること（コンテナは落とさなくて構いません）。
 > ```
 >
-> ポートごとなので、**アーム側が掴まれていてもホイールだけは解放できる**。
-> 走り出した機体を止めるのが最優先なので、そこは道連れにしない。
+> splitではポートごとなので、**アーム側が掴まれていてもホイールだけは解放できる**。
+> sharedでは1ポートをbridgeだけが所有するため、launchを止めてから実行する。
 
 実体は ROS を一切使わず、シリアルポートを直接開く:
 
 ```bash
-ros2 run lekiwi_so101_bringup release_all [--only both|wheels|arm] [--yes] [--dry-run]
+ros2 run lekiwi_so101_bringup release_all --bus-mode split|shared \
+  [--only both|wheels|arm] [--yes] [--dry-run]
 ```
 
 `--dry-run` は `Torque_Enable` を**読むだけで一切書き込まない**。
@@ -187,13 +219,13 @@ ros2 run lekiwi_so101_bringup release_all [--only both|wheels|arm] [--yes] [--dr
 解放の前後で比べると、実際に効いたことが確認できる。
 
 ```bash
-make release-check     # = release_all --dry-run
+make release-check BUS_MODE=shared  # = release_all --bus-mode shared --dry-run
 ```
 
 | 対象 | ポート / ID | やること |
 | --- | --- | --- |
 | ホイール | `/dev/lekiwi`、7/8/9 | `stop()`（Goal_Velocity=0）→ `disable_torque()` |
-| アーム | `/dev/so101_follower`、1〜6 | **`disable_torque()` のみ** |
+| アーム | split: `/dev/so101_follower` / shared: `/dev/lekiwi`、1〜6 | **`disable_torque()` のみ** |
 
 > ★ **アームに `stop()` を使わない。** `stop()` が書く `Goal_Velocity` は、速度モード
 > では速度指令だが、**位置モードでは速度上限**であって意味が違う。0 を書いたときの
@@ -213,13 +245,14 @@ launch 全体が落ちた場合（SIGKILL）は前節を参照。
 
 | 落ちたもの | 影響 | 復帰 |
 | --- | --- | --- |
-| **アームのブリッジ**（シリアル異常 / watchdog 期限切れ） | **アームだけトルク OFF → 脱力する。** `robot_state_publisher` は生き残るので、ベースの SLAM / Nav2 は測位を失わない | launch を上げ直す |
-| `base_driver` | `/odom` が止まる。リーチは `REJECTED_STALE_ODOM` で拒否。★ ホイールは `finally` の `safe_stop()` で速度ゼロ + トルク OFF | 同上 |
+| **アームのブリッジ**（シリアル異常 / watchdog期限切れ） | splitはアームだけトルクOFF。sharedは車輪を止めて全IDをトルクOFF。RSPは生き残る | launchを上げ直す |
+| `base_driver` | `/odom` が止まる。splitは速度ゼロ+トルクOFF、sharedはbridgeのwheel watchdogが速度ゼロにする | 同上 |
 | `slam_toolbox` | `map → odom` が**凍る**（消えない）。リーチは `REJECTED_STALE_TF` で拒否し、**黙って古い座標で解かない** | 同上 |
 | `scan_filter` | `/scan_filtered` の publisher が 0 になり `map → odom` が出なくなる。★ Nav2 は `Invalid frame ID map` を **INFO で**吐き続けるのでエラーに見えない | 同上 |
 | `realsense2_camera` | 点群が止まるだけ。TF もリーチもナビも影響を受けない | 同上 |
 
-> ★ **アームの故障をアームだけに閉じ込めている。**
+> ★ splitでは**アームの故障をアームだけに閉じ込めています。** sharedでは同じ
+> シリアルバスを所有するbridgeの障害なので、安全のため車輪停止後に全IDを解放します。
 > `robot.launch.py` は `follower.launch.py` を `shutdown_on_bridge_exit:=false`
 > で include している。既定の `true` だと、ブリッジが落ちた瞬間に launch service
 > 全体が止まり、**同居している唯一の `robot_state_publisher` も道連れ**になって
@@ -254,7 +287,7 @@ make check
 | # | 内容 | 結果 |
 | --- | --- | --- |
 | M-1 | イメージが 1 つビルドできる | OK。`local/lekiwi-so101:jazzy` **7.85GB**（旧 so101 4.96GB + lekiwi-base 4.75GB。上流を焼き込んで +0.04GB） |
-| M-2 | 全パッケージが 1 ワークスペースでビルドできる | OK。**9 パッケージ**（`so_arm_utils` `so_arm101_description` `sllidar_ros2` `so101_bringup` `lekiwi_description` `lekiwi_base_bringup` `lekiwi_so101_bringup` `rplidar_bringup` `realsense_bringup`） |
+| M-2 | 全パッケージが1ワークスペースでビルドできる | OK（shared用interfaceとアプリケーション分離後も `make bootstrap` で一括ビルド） |
 | M-3 | pip の numpy 2.2.6 でベース側のテストが通る | OK。`lekiwi_base_bringup` **70 件**を含む全 **136 件** pass |
 | M-4 | コンテナが 1 つ | OK。`docker ps` が 1 行 |
 | M-5 | `map → arm_gripper_frame_link` / `map → wrist_camera_depth_optical_frame` | OK。`(0.471, -0.000, 0.315)` / `(0.394, -0.071, 0.323)` |
@@ -276,7 +309,7 @@ make check
 | --- | --- |
 | H-1 | **`release_all` が実際にトルクを落とすか。** `Torque_Enable` の読み戻しで確認 ← **最重要** |
 | H-2 | 意図的に `docker kill` → ホイールが回り続けることを確認 → `release_all` で止まるか（**★ 車輪を浮かせて、人が立ち会う**） |
-| H-3 | `privileged` で 3 デバイス + RealSense が同時に見えるか |
+| H-3 | `privileged` で splitの3デバイス / sharedの2デバイス + RealSenseが見えるか |
 | H-4 | 起動時間（1 プロセスに 24 ノードが乗る） |
 | H-5 | `Ctrl+C` で実機のトルク OFF とホイール停止が両方走るか |
 
@@ -293,5 +326,5 @@ make check
 | `docker/lekiwi_so101_bringup`（4 コンテナ） | このスタックが置き換える |
 | `arm.launch.py` | `robot.launch.py` が include している（アーム側だけ動かしたいときは今も使える） |
 
-**旧ディレクトリは消していない。** 1 サブシステムだけを切り分けたいときに使う。
-ただし同時に起動しないこと（`make` の guard が止める）。
+サブシステム単体の4ディレクトリは切り分け用に残しています。旧統合4コンテナ構成は
+削除済みです。単体構成とこの構成を同時に起動しないでください（guardが停止します）。

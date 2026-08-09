@@ -22,6 +22,7 @@ from lekiwi_so101_bringup.release_all import (  # noqa: E402
     Outcome,
     diagnose_port,
     port_holder,
+    release_shared_bus,
 )
 
 
@@ -214,3 +215,81 @@ def test_free_port_passes_diagnose_port(tmp_path):
     port = tmp_path / "open_port"
     port.touch()
     assert diagnose_port(str(port)) is None
+
+
+def test_shared_release_opens_once_and_stops_wheels_before_arm_confirmation(
+    monkeypatch,
+):
+    events = []
+
+    class FakeBus:
+        def __init__(self, port, ids, baudrate):
+            events.append(("init", port, tuple(ids), baudrate))
+
+        def connect(self):
+            events.append(("connect",))
+
+        def stop(self, ids):
+            events.append(("stop", tuple(ids)))
+
+        def disable_torque(self, ids):
+            events.append(("disable", tuple(ids)))
+
+        def read_torque_enable(self, ids):
+            events.append(("read", tuple(ids)))
+            return dict.fromkeys(ids, 0)
+
+        def close(self):
+            events.append(("close",))
+
+    monkeypatch.setattr("lekiwi_so101_bringup.release_all.diagnose_port", lambda _p: None)
+    monkeypatch.setattr("lekiwi_so101_bringup.release_all.StsBus", FakeBus)
+
+    def fake_confirm(_yes):
+        events.append(("confirm",))
+        return True
+
+    monkeypatch.setattr("lekiwi_so101_bringup.release_all.confirm", fake_confirm)
+    outcomes = release_shared_bus(
+        "/dev/lekiwi",
+        do_wheels=True,
+        do_arm=True,
+        read_only=False,
+        assume_yes=False,
+    )
+    assert len([event for event in events if event[0] == "init"]) == 1
+    assert events.index(("stop", tuple(WHEEL_IDS))) < events.index(("confirm",))
+    assert ("disable", tuple(ARM_IDS)) in events
+    assert all(outcome.released for outcome in outcomes)
+
+
+def test_shared_dry_run_never_writes(monkeypatch):
+    events = []
+
+    class FakeBus:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def connect(self):
+            events.append("connect")
+
+        def read_torque_enable(self, ids):
+            events.append(("read", tuple(ids)))
+            return dict.fromkeys(ids, 0)
+
+        def close(self):
+            events.append("close")
+
+        def stop(self, _ids):
+            events.append("WRITE_STOP")
+
+        def disable_torque(self, _ids):
+            events.append("WRITE_TORQUE")
+
+    monkeypatch.setattr("lekiwi_so101_bringup.release_all.diagnose_port", lambda _p: None)
+    monkeypatch.setattr("lekiwi_so101_bringup.release_all.StsBus", FakeBus)
+    release_shared_bus(
+        "/dev/lekiwi", do_wheels=True, do_arm=True, read_only=True, assume_yes=True
+    )
+    assert "WRITE_STOP" not in events
+    assert "WRITE_TORQUE" not in events

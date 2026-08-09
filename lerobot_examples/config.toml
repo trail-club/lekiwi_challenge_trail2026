@@ -1,14 +1,15 @@
 # SO101 デバイス設定
 #
-# 各自の環境に合わせて port と id を書き換えてください。
+# 各自の環境に合わせてudev安定名とidを設定してください。
+# USBシリアルを含む /dev/tty.usbmodem... はここへ固定しません。
 # ポートの調べ方:  python -m lerobot.scripts.lerobot_find_port
 
 [leader]
-port = "/dev/tty.usbmodem5A7A0178741"
+port = "/dev/so101_leader"
 id = "my_leader_arm"
 
 [follower]
-port = "/dev/tty.usbmodem5A7A0180801"
+port = "/dev/so101_follower"
 id = "my_follower_arm"
 
 # follower を記録ポーズへ動かすときの補間設定（急な動作を避けるため）

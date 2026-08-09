@@ -24,6 +24,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     port = LaunchConfiguration("port")
+    hardware_backend = LaunchConfiguration("hardware_backend")
     dry_run = LaunchConfiguration("dry_run")
     start_rviz = LaunchConfiguration("start_rviz")
     start_robot_state_publisher = LaunchConfiguration("start_robot_state_publisher")
@@ -44,6 +45,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument("port", default_value="/dev/lekiwi"),
+        DeclareLaunchArgument("hardware_backend", default_value="serial"),
         DeclareLaunchArgument("dry_run", default_value="false"),
         DeclareLaunchArgument("start_rviz", default_value="true"),
         # /robot_description は TRANSIENT_LOCAL / depth 1 なので、publisher が
@@ -78,7 +80,11 @@ def generate_launch_description():
             output="screen",
             parameters=[
                 config_file,
-                {"port": port, "dry_run": dry_run},
+                {
+                    "port": port,
+                    "dry_run": dry_run,
+                    "hardware_backend": hardware_backend,
+                },
             ],
         ),
 

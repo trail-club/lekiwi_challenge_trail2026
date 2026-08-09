@@ -184,7 +184,8 @@ python3 -c "from so101_bringup import bridge_core, calibration_limits, \
 # lekiwi_examples はその上で動くアプリケーション側 (逆運動学・リーチ・操作)
 python3 -c "from lekiwi_examples import cartesian_jog, cartesian_math, keyboard_input, \
     reach_solver, reach_to_point, teleop_keyboard"
-python3 -c "import lerobot; from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig"
+python3 -c "import lerobot; from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig; from lerobot.robots.lekiwi import LeKiwi, LeKiwiConfig"
+python3 -c "from lekiwi_hardware_interfaces.msg import WheelCommand"
 # ★ ベース側。統合により numpy が dpkg 版から pip の 2.2.6 に変わったので、
 #   import が通ることをここで毎回確かめる。
 python3 -c "import scservo_sdk, serial, numpy"
@@ -262,9 +263,8 @@ echo "  launch の読み込み: OK"
 echo
 echo "== 完了 =="
 echo "以降は次で起動できます:"
-echo "  docker compose up -d"
-echo "  docker compose exec -it robot bash"
-echo "  ros2 launch lekiwi_so101_bringup robot.launch.py backend:=lerobot robot_id:=my_follower"
+echo "  make run-split SO101_ROBOT_ID=my_follower"
+echo "  make run-shared LEKIWI_ROBOT_ID=my_lekiwi"
 echo
 echo "設定や Python コードを編集したら launch を上げ直すだけで反映されます"
 echo "(--symlink-install なので colcon build も要りません)。"

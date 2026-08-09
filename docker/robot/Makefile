@@ -3,22 +3,25 @@
 # 使い方:
 #   make build       イメージをビルド
 #   make bootstrap   ★ 初回とパッケージ追加時。上流取得 + colcon build + 静的検査
-#   make up          コンテナを起動する (bash が上がるだけ。まだ何も動かない)
-#   make run         ★ 実機で launch を起動する (前面。Ctrl+C で止める)
-#   make mock        実機に触れないモック構成で起動 (Mac 可)
+#   make install-udev BUS_MODE=shared|split  .env からホストudevルールを生成
+#   make up-split / make up-shared  コンテナだけ起動
+#   make run-split SO101_ROBOT_ID=my_follower
+#   make run-shared LEKIWI_ROBOT_ID=my_lekiwi
+#   make mock-split / make mock-shared
 #   make shell       コンテナに入る
-#   make stow        アームを低く畳む (★ 停止前に必ず実行する)
+#   make stow        reach.launch.py起動中にアームを低く畳む
 #   make save-map    現在の地図を保存
 #   make check       ROS グラフの不変条件を確認
-#   make release-check ★ トルクが入っているかを読むだけ (何も書かない)
-#   make release     ★ 異常終了後にホイールとアームを解放する
+#   make release-check BUS_MODE=shared ★ 読むだけ
+#   make release BUS_MODE=shared       ★ 異常終了後に全解放
 #   make down        コンテナを停止・削除
 #
 # ■ 停止
-#   通常  : make run の端末で Ctrl+C。その前に make stow
+#   通常  : アームを安全な低い姿勢にしてからrun端末でCtrl+C
 #   非常時: **物理スイッチを切る。** docker kill は使わない
 #           (SIGKILL では停止処理が走らず、ホイールは最後の指令速度で回り続ける)
-#   異常終了からの復帰: make down してから make release
+#   異常終了からの復帰: launchを止めて make release BUS_MODE=split|shared
+#                         (コンテナは停止しなくてよい)
 
 -include .env
 
@@ -27,7 +30,8 @@ SVC        := robot
 SVC_MOCK   := robot-mock
 E          := /entrypoint.sh
 BACKEND    ?= lerobot
-ROBOT_ID   ?= my_follower
+SO101_ROBOT_ID ?= my_follower
+LEKIWI_ROBOT_ID ?= my_lekiwi
 START_RVIZ ?= true
 MOCK_START_RVIZ ?= false
 
@@ -41,6 +45,11 @@ LEKIWI_DEVICE  ?= /dev/lekiwi
 SO101_DEVICE   ?= /dev/so101_follower
 RPLIDAR_DEVICE ?= /dev/rplidar
 MAP_DIR        ?= $(HOME)/maps
+
+# USBシリアルは機体固有なので追跡ファイルへ書かない。.env からudev生成処理へ渡す。
+LEKIWI_SERIAL ?=
+SO101_SERIAL  ?=
+export LEKIWI_SERIAL SO101_SERIAL
 
 # ★ 別スタックのコンテナが同じ ROS_DOMAIN_ID に居ると /robot_description が
 #   二重に latch され、/tf も混信する (CLAUDE.md の「RViz に別のロボットが出る」)。
@@ -56,8 +65,10 @@ LEGACY += lekiwi-nav lekiwi-nav-mock lekiwi-so101-arm lekiwi-so101-arm-mock \
 CONFLICTS_FOR_REAL := $(LEGACY) $(SVC_MOCK)
 CONFLICTS_FOR_MOCK := $(LEGACY) $(SVC)
 
-.PHONY: build bootstrap up run mock shell stow save-map check release \
-        release-wheels release-check down logs guard guard-mock
+.PHONY: build bootstrap install-udev udev-dry-run up-split up-shared run-split run-shared \
+        mock-split mock-shared shell stow save-map check release \
+        release-wheels release-check down logs guard guard-mock require-bus-mode \
+        preflight-shared-devices preflight-split-devices
 
 build:
 	docker compose -f compose.yaml build
@@ -68,6 +79,14 @@ build:
 #   --no-deps は不要 (サービスが 1 つしか無い)。デバイスを掴まない mock 側で走らせる。
 bootstrap:
 	docker compose -f compose.mock.yaml run --rm $(SVC_MOCK) bash /bootstrap.sh
+
+# 追跡対象の.rulesはテンプレート。機体固有値を.envから埋めてホストへ入れる。
+# dry-runはsudoも書き込みも行わず、生成されるルールだけを表示する。
+install-udev: require-bus-mode
+	bash ./install_udev.sh $(BUS_MODE)
+
+udev-dry-run: require-bus-mode
+	bash ./install_udev.sh --dry-run $(BUS_MODE)
 
 # $(1) に渡した名前のコンテナが動いていたら止めさせる。
 define guard_against
@@ -94,27 +113,58 @@ guard:
 guard-mock:
 	$(call guard_against,$(CONFLICTS_FOR_MOCK))
 
-up: guard
+preflight-shared-devices:
+	@test -c "$(LEKIWI_DEVICE)" || { \
+	  echo "ERROR: $(LEKIWI_DEVICE) が文字デバイスではない。make install-udev BUS_MODE=shared とUSB接続を確認すること" >&2; exit 1; }
+	@test -c "$(RPLIDAR_DEVICE)" || { \
+	  echo "ERROR: $(RPLIDAR_DEVICE) が文字デバイスではない。udevとLiDAR接続を確認すること" >&2; exit 1; }
+
+preflight-split-devices: preflight-shared-devices
+	@test -c "$(SO101_DEVICE)" || { \
+	  echo "ERROR: $(SO101_DEVICE) が文字デバイスではない。make install-udev BUS_MODE=split とUSB接続を確認すること" >&2; exit 1; }
+
+up-split: guard preflight-split-devices
 	@test -f .env || { echo "ERROR: .env が無い。cp .env.example .env して編集すること" >&2; exit 1; }
 	mkdir -p $(MAP_DIR)
-	docker compose -f compose.yaml up -d
+	docker compose -f compose.yaml -f compose.split.yaml up -d
+
+up-shared: guard preflight-shared-devices
+	@test -f .env || { echo "ERROR: .env が無い。cp .env.example .env して編集すること" >&2; exit 1; }
+	mkdir -p $(MAP_DIR)
+	docker compose -f compose.yaml -f compose.shared.yaml up -d
 
 # ★ 前面で走らせること。Ctrl+C が launch に届いてはじめて停止処理
 #   (アームのトルク OFF + ホイールの速度ゼロ) が走る。
 #   docker compose down では届かない。
-run: up
+run-split: up-split
 	docker compose -f compose.yaml exec -it $(SVC) $(E) \
 		ros2 launch lekiwi_so101_bringup robot.launch.py \
-		backend:=$(BACKEND) robot_id:=$(ROBOT_ID) start_rviz:=$(START_RVIZ) \
+		motor_bus_mode:=split backend:=$(BACKEND) \
+		robot_id:=$(SO101_ROBOT_ID) start_rviz:=$(START_RVIZ) \
 		lekiwi_port:=$(LEKIWI_DEVICE) \
 		usb_port:=$(SO101_DEVICE) \
 		lidar_port:=$(RPLIDAR_DEVICE)
 
-mock: guard-mock
+run-shared: up-shared
+	docker compose -f compose.yaml exec -it $(SVC) $(E) \
+		ros2 launch lekiwi_so101_bringup robot.launch.py \
+		motor_bus_mode:=shared backend:=$(BACKEND) \
+		robot_id:=$(LEKIWI_ROBOT_ID) start_rviz:=$(START_RVIZ) \
+		lekiwi_port:=$(LEKIWI_DEVICE) lidar_port:=$(RPLIDAR_DEVICE)
+
+mock-split: guard-mock
 	docker compose -f compose.mock.yaml up -d
 	docker compose -f compose.mock.yaml exec -it $(SVC_MOCK) $(E) \
 		ros2 launch lekiwi_so101_bringup robot.launch.py \
-		sim:=true backend:=mock start_rviz:=$(MOCK_START_RVIZ) \
+		motor_bus_mode:=split sim:=true backend:=mock \
+		start_rviz:=$(MOCK_START_RVIZ) mock_wrist_camera_optical:=true
+
+mock-shared: guard-mock
+	docker compose -f compose.mock.yaml up -d
+	docker compose -f compose.mock.yaml exec -it $(SVC_MOCK) $(E) \
+		ros2 launch lekiwi_so101_bringup robot.launch.py \
+		motor_bus_mode:=shared sim:=true backend:=mock \
+		start_rviz:=$(MOCK_START_RVIZ) \
 		mock_wrist_camera_optical:=true
 
 shell:
@@ -123,8 +173,12 @@ shell:
 # ★ アームを低く畳む。launch を止める前に必ず実行すること
 #   (正常終了でトルクが切れてアームが落ちるため)。
 stow:
-	docker compose -f compose.yaml exec $(SVC) $(E) \
-		ros2 service call /so101/stow std_srvs/srv/Trigger "{}"
+	docker compose -f compose.yaml exec $(SVC) $(E) bash -lc '\
+		if ! ros2 service list | grep -qx /so101/stow; then \
+		  echo "ERROR: /so101/stow が無い。lekiwi_examples の reach.launch.py を起動するか、アームを別の安全な方法で低くしてから停止すること" >&2; \
+		  exit 1; \
+		fi; \
+		ros2 service call /so101/stow std_srvs/srv/Trigger "{}"'
 
 save-map:
 	docker compose -f compose.yaml exec $(SVC) $(E) \
@@ -183,33 +237,44 @@ check:
 #     以前ここに「コンテナが動いていたら中止」という guard を置いていたが、
 #     **launch が落ちてコンテナだけ生きている場合を弾いてしまう**ので廃止した。
 define release_all_cmd
+	$(if $(filter shared,$(BUS_MODE)),$(eval RELEASE_COMPOSE=compose.shared.yaml),$(eval RELEASE_COMPOSE=compose.split.yaml))
 	@if [ -n "$$(docker ps -q -f name=^$(SVC)$$)" ]; then \
 	  echo "コンテナ $(SVC) は動いています。その中で実行します。"; \
 	  docker compose -f compose.yaml exec $(1) $(SVC) $(E) \
-	    ros2 run lekiwi_so101_bringup release_all $(2); \
+	    ros2 run lekiwi_so101_bringup release_all --bus-mode $(BUS_MODE) \
+	      --shared-port $(LEKIWI_DEVICE) --wheel-port $(LEKIWI_DEVICE) \
+	      --arm-port $(SO101_DEVICE) $(2); \
 	else \
 	  echo "コンテナ $(SVC) は動いていません。使い捨てコンテナで実行します。"; \
-	  docker compose -f compose.yaml run --rm $(1) $(SVC) $(E) \
-	    ros2 run lekiwi_so101_bringup release_all $(2); \
+	  docker compose -f compose.yaml -f $(RELEASE_COMPOSE) run --rm $(1) $(SVC) $(E) \
+	    ros2 run lekiwi_so101_bringup release_all --bus-mode $(BUS_MODE) \
+	      --shared-port $(LEKIWI_DEVICE) --wheel-port $(LEKIWI_DEVICE) \
+	      --arm-port $(SO101_DEVICE) $(2); \
 	fi
 endef
+
+require-bus-mode:
+	@test "$(BUS_MODE)" = split -o "$(BUS_MODE)" = shared || { \
+	  echo "ERROR: BUS_MODE=split または BUS_MODE=shared を必ず指定すること" >&2; \
+	  exit 2; \
+	}
 
 # ★ 異常終了からの復帰。**アームもホイールもこれ 1 つ**で解放する。
 #   ROS は使わずシリアルポートを直接開く。
 #   ★ アームは支えが無ければ落ちる。人が支えてから実行すること。
 #   ★ コンテナは落とさなくてよい。launch さえ止まっていれば通る。
-release:
+release: require-bus-mode
 	$(call release_all_cmd,-it,)
 
 # ホイールだけ止める (アームは落ちない)。走り出したときの一次対応。
-release-wheels:
+release-wheels: require-bus-mode
 	$(call release_all_cmd,,--only wheels --yes)
 
 # ★ 読むだけ。何も書き込まないのでアームは落ちない。
 #   「いまトルクが入っているのか」の確認。release の前後で比べる。
 #   ★ exit 1 は「トルクが入っている / 読めない」の意味で、異常とは限らない。
 #     make は `Error 1` と表示するが、解放前に叩けばそれが期待どおり。
-release-check:
+release-check: require-bus-mode
 	$(call release_all_cmd,,--dry-run)
 
 down:

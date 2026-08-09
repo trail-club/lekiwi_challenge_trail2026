@@ -15,12 +15,11 @@
 #   (sts_bus.py のリトライが症状を隠してしまう)。
 #   RPLIDAR の CP210x では起きにくいが CDC-ACM では頻発するため必須。
 
-# LeKiwi実機で確認したUSBシリアルで識別する。
+# ★ これはテンプレート。直接 /etc/udev/rules.d へコピーしないこと。
+# docker/robot/.env の LEKIWI_SERIAL を使って `make install-udev` が置換する。
 # SO-101側も同じVID:PID (1a86:55d3) のため、VID:PIDだけでは識別しない。
-SUBSYSTEM=="tty", ATTRS{serial}=="5A7A017874", \
+SUBSYSTEM=="tty", ATTRS{serial}=="@LEKIWI_SERIAL@", \
   MODE:="0660", GROUP:="dialout", SYMLINK+="lekiwi", \
   ENV{ID_MM_DEVICE_IGNORE}="1", ENV{ID_MM_PORT_IGNORE}="1"
 
-# 同一の基板を複数繋ぐ場合は VID:PID ではなくシリアルで識別する。
-# Linux実機で確認したシリアルは "5A7A017874"。
-# 実機シリアルを変更した場合は、この値も更新すること。
+# 同一の基板を複数繋ぐ場合も、機体ごとの .env で別シリアルを指定する。

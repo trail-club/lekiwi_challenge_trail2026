@@ -13,7 +13,8 @@
   * ``dry_run:=true`` でシリアルを開かずに全経路を検証できる
   * ``test_wheel_ticks`` で運動学をバイパスし 1 輪ずつ切り分けできる
 
-★ 12V 給電中にアーム (ID 1-6, 7.4V 版) をバスへ繋がないこと。
+split 機で 12V 給電中にアーム (ID 1-6, 7.4V 版) をホイールバスへ
+繋がないこと。shared 機は全モータが 12V 対応であることを前提とする。
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ import math
 import numpy as np
 import rclpy
 from geometry_msgs.msg import Quaternion, TransformStamped, Twist
+from lekiwi_hardware_interfaces.msg import WheelCommand
 from nav_msgs.msg import Odometry
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import ExternalShutdownException
@@ -48,6 +50,7 @@ class LekiwiBaseDriver(Node):
 
         # ── パラメータ ──────────────────────────────────────────────
         self.declare_parameter("port", "/dev/lekiwi")
+        self.declare_parameter("hardware_backend", "serial")
         self.declare_parameter("baudrate", 1_000_000)
         self.declare_parameter("motor_ids", [7, 8, 9])  # left, back, right
         self.declare_parameter("wheel_radius", 0.05)
@@ -82,6 +85,12 @@ class LekiwiBaseDriver(Node):
         self.base_frame = str(p("base_frame").value)
         self.publish_tf = bool(p("publish_tf").value)
         self.dry_run = bool(p("dry_run").value)
+        self.hardware_backend = str(p("hardware_backend").value)
+
+        if self.hardware_backend not in ("serial", "bridge"):
+            raise ValueError("hardware_backend は serial または bridge が必要")
+        if self.hardware_backend == "bridge" and self.motor_ids != [7, 8, 9]:
+            raise ValueError("bridge backend は canonical wheel IDs [7, 8, 9] が必要")
 
         if len(self.motor_ids) != 3:
             raise ValueError(f"motor_ids は 3 個必要 (left, back, right): {self.motor_ids}")
@@ -111,6 +120,7 @@ class LekiwiBaseDriver(Node):
         self.wheel_positions = np.zeros(3)  # 車輪の積算回転角 [rad]
         self.last_tick_time = self.get_clock().now()
         self.bus: StsBus | None = None
+        self.wheel_command_pub = None
         self._warned_stale = False
 
         rate = float(p("control_rate_hz").value)
@@ -130,10 +140,19 @@ class LekiwiBaseDriver(Node):
         self.odom_pub = self.create_publisher(Odometry, "odom", 10)
         self.joint_pub = self.create_publisher(JointState, "joint_states", 10)
         self.tf_broadcaster = TransformBroadcaster(self)
-        self.create_service(Trigger, "~/recover", self._on_recover, callback_group=group)
+        if self.hardware_backend == "serial":
+            self.create_service(Trigger, "~/recover", self._on_recover, callback_group=group)
+        else:
+            self.wheel_command_pub = self.create_publisher(
+                WheelCommand, "/lekiwi/hardware_wheel_commands", 1
+            )
 
         # ── ハードウェア (ここでトルクが入る) ────────────────────────
-        if self.dry_run:
+        if self.hardware_backend == "bridge":
+            self.get_logger().info(
+                "bridge backend: シリアルを開かず共有 bridge へ wheel ticks を送ります"
+            )
+        elif self.dry_run:
             self.get_logger().warn("dry_run: シリアルを開きません。odom と TF のみ出力します")
         else:
             self._connect_bus()
@@ -145,14 +164,19 @@ class LekiwiBaseDriver(Node):
             self.create_timer(1.0 / rate, self._on_timer, callback_group=group)
 
             diag_period = float(p("diagnostics_period_s").value)
-            if diag_period > 0.0 and not self.dry_run:
+            if (
+                diag_period > 0.0
+                and not self.dry_run
+                and self.hardware_backend == "serial"
+            ):
                 self.create_timer(diag_period, self._on_diagnostics, callback_group=group)
         except Exception:
             self.safe_stop()
             raise
 
         self.get_logger().info(
-            f"起動: port={p('port').value} ids={self.motor_ids} "
+            f"起動: backend={self.hardware_backend} port={p('port').value} "
+            f"ids={self.motor_ids} "
             f"r={self.wheel_radius} R={self.base_radius} {rate:.0f}Hz"
         )
         self.get_logger().info(
@@ -189,6 +213,9 @@ class LekiwiBaseDriver(Node):
 
     def safe_stop(self) -> None:
         """ゼロ送信 → トルク OFF。終了時に必ず呼ぶ。"""
+        if self.hardware_backend == "bridge":
+            self._publish_wheel_command((0, 0, 0))
+            return
         if self.bus is None:
             return
         try:
@@ -270,7 +297,16 @@ class LekiwiBaseDriver(Node):
                 direction_signs=self.direction_signs,
             )
 
-        if self.bus is not None:
+        bridge_ready = True
+        if self.hardware_backend == "bridge":
+            bridge_ready = bool(
+                self.wheel_command_pub
+                and self.wheel_command_pub.get_subscription_count() > 0
+            )
+            if not bridge_ready:
+                ticks = [0, 0, 0]
+            self._publish_wheel_command(ticks)
+        elif self.bus is not None:
             try:
                 self.bus.sync_write_velocity(dict(zip(self.motor_ids, ticks)))
             except StsBusError as exc:
@@ -283,9 +319,18 @@ class LekiwiBaseDriver(Node):
         )
         act_wz = math.radians(act_wz_degps)
 
-        self._integrate_odometry(act_vx, act_vy, act_wz, dt)
-        self._integrate_wheels(ticks, dt)
+        integration_dt = dt if bridge_ready else 0.0
+        self._integrate_odometry(act_vx, act_vy, act_wz, integration_dt)
+        self._integrate_wheels(ticks, integration_dt)
         self._publish(now, act_vx, act_vy, act_wz, ticks)
+
+    def _publish_wheel_command(self, ticks) -> None:
+        if self.wheel_command_pub is None:
+            return
+        message = WheelCommand()
+        message.header.stamp = self.get_clock().now().to_msg()
+        message.ticks = [int(value) for value in ticks]
+        self.wheel_command_pub.publish(message)
 
     def _current_command(self, now) -> tuple[float, float, float]:
         age = (now - self.last_cmd_time).nanoseconds * 1e-9

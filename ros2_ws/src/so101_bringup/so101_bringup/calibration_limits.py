@@ -51,7 +51,9 @@ def _finite_int(entry: dict[str, Any], key: str, motor: str) -> int:
     return value
 
 
-def limits_from_calibration_data(data: dict[str, Any]) -> dict[str, float]:
+def limits_from_calibration_data(
+    data: dict[str, Any], motor_bus_mode: str = "split"
+) -> dict[str, float]:
     """Return xacro lower/upper arguments from a LeRobot calibration mapping.
 
     For body joints LeRobot's ``use_degrees=True`` path uses the midpoint of
@@ -60,15 +62,21 @@ def limits_from_calibration_data(data: dict[str, Any]) -> dict[str, float]:
     second time: it is already applied in the servo's Present_Position frame.
     """
 
+    if motor_bus_mode not in ("split", "shared"):
+        raise ValueError("motor_bus_mode must be either 'split' or 'shared'")
+    calibration_prefix = "arm_" if motor_bus_mode == "shared" else ""
     result: dict[str, float] = {}
     for motor, joint in CALIBRATION_TO_JOINT.items():
-        entry = data.get(motor)
+        calibration_motor = f"{calibration_prefix}{motor}"
+        entry = data.get(calibration_motor)
         if not isinstance(entry, dict):
-            raise ValueError(f"calibration has no valid entry for {motor}")
-        lower_raw = _finite_int(entry, "range_min", motor)
-        upper_raw = _finite_int(entry, "range_max", motor)
+            raise ValueError(f"calibration has no valid entry for {calibration_motor}")
+        lower_raw = _finite_int(entry, "range_min", calibration_motor)
+        upper_raw = _finite_int(entry, "range_max", calibration_motor)
         if lower_raw >= upper_raw:
-            raise ValueError(f"calibration {motor}: range_min must be < range_max")
+            raise ValueError(
+                f"calibration {calibration_motor}: range_min must be < range_max"
+            )
 
         midpoint = (lower_raw + upper_raw) / 2.0
         lower = (lower_raw - midpoint) * 2.0 * math.pi / ENCODER_RESOLUTION
@@ -84,6 +92,7 @@ def load_limits(
     robot_id: str,
     *,
     required: bool,
+    motor_bus_mode: str = "split",
 ) -> dict[str, float] | None:
     """Load limits for ``robot_id`` or return ``None`` when calibration is unused."""
 
@@ -104,7 +113,7 @@ def load_limits(
         raise ValueError(f"invalid calibration JSON: {path}") from exc
     if not isinstance(data, dict):
         raise ValueError(f"calibration JSON must contain an object: {path}")
-    return limits_from_calibration_data(data)
+    return limits_from_calibration_data(data, motor_bus_mode)
 
 
 def build_robot_description(
@@ -113,6 +122,7 @@ def build_robot_description(
     calibration_dir: str | Path,
     robot_id: str,
     backend: str,
+    motor_bus_mode: str = "split",
 ) -> str:
     """Expand xacro and replace four body-joint limits for a real calibration.
 
@@ -132,6 +142,7 @@ def build_robot_description(
         calibration_dir,
         robot_id,
         required=backend == "lerobot",
+        motor_bus_mode=motor_bus_mode,
     )
     root = ET.fromstring(xml)
     prefix = str(mappings.get("prefix", ""))

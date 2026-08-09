@@ -1,6 +1,6 @@
 # 実機に一切触れないモック構成。Mac でも動く。**1 コンテナ**。
 #
-#   make mock
+#   make mock-split / make mock-shared
 #
 # ■ ★ compose.yaml のオーバーレイではなく「単独ファイル」にしてある
 #   Compose は devices: を**マージ**するので、オーバーレイでデバイスを外せない。

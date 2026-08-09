@@ -232,25 +232,34 @@ class StsBus:
         if comm != scs.COMM_SUCCESS:
             raise StsBusError(f"速度指令の送信失敗: {self._packet.getTxRxResult(comm)}")
 
-    def stop(self) -> None:
-        """全モータの速度をゼロにする。失敗しても例外を投げない。"""
+    def _selected_ids(self, ids: list[int] | tuple[int, ...] | None) -> list[int]:
+        selected = self.ids if ids is None else [int(motor_id) for motor_id in ids]
+        unknown = [motor_id for motor_id in selected if motor_id not in self.ids]
+        if unknown:
+            raise ValueError(f"bus に含まれない motor ID: {unknown}")
+        return selected
+
+    def stop(self, ids: list[int] | tuple[int, ...] | None = None) -> None:
+        """指定モータの速度をゼロにする。失敗しても例外を投げない。"""
         try:
-            self.sync_write_velocity(dict.fromkeys(self.ids, 0))
+            self.sync_write_velocity(dict.fromkeys(self._selected_ids(ids), 0))
         except StsBusError:
             pass
 
-    def disable_torque(self) -> None:
-        """全モータのトルクを切る。失敗しても他の ID の処理は続ける。
+    def disable_torque(self, ids: list[int] | tuple[int, ...] | None = None) -> None:
+        """指定モータのトルクを切る。失敗しても他の ID の処理は続ける。
 
         ``Torque_Enable=0`` の書き込みは過負荷エラーのラッチ解除も兼ねる。
         """
-        for motor_id in self.ids:
+        for motor_id in self._selected_ids(ids):
             try:
                 self._write(TORQUE_ENABLE, motor_id, 0)
             except StsBusError:
                 pass
 
-    def read_torque_enable(self) -> dict[int, int | None]:
+    def read_torque_enable(
+        self, ids: list[int] | tuple[int, ...] | None = None
+    ) -> dict[int, int | None]:
         """各 ID の ``Torque_Enable`` を読む。読めなかった ID は ``None``。
 
         ``disable_torque()`` は ID ごとの失敗を握り潰すので、「呼べた」ことは
@@ -258,7 +267,7 @@ class StsBus:
         ``lekiwi_so101_bringup.release_all`` が結果表示に使う。
         """
         result: dict[int, int | None] = {}
-        for motor_id in self.ids:
+        for motor_id in self._selected_ids(ids):
             try:
                 result[motor_id] = self._read(TORQUE_ENABLE, motor_id)
             except StsBusError:

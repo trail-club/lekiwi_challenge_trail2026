@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
@@ -23,14 +24,42 @@ from so101_bringup.calibration_limits import build_robot_description
 
 def _setup_actions(context, *, bringup_share: Path):
     backend = LaunchConfiguration("backend").perform(context)
+    motor_bus_mode = LaunchConfiguration("motor_bus_mode").perform(context)
     usb_port = LaunchConfiguration("usb_port").perform(context)
     robot_id = LaunchConfiguration("robot_id").perform(context)
     calibration_dir = LaunchConfiguration("calibration_dir").perform(context)
     controllers_file = LaunchConfiguration("controllers_file").perform(context)
+    base_params_file = LaunchConfiguration("base_params_file").perform(context)
     description_file = LaunchConfiguration("description_file").perform(context)
     joint_prefix = LaunchConfiguration("joint_prefix").perform(context)
     torque = LaunchConfiguration("torque").perform(context).lower() == "true"
     control_file = bringup_share / "control" / "so101_follower.ros2_control.xacro"
+
+    wheel_safety_params = {}
+    if motor_bus_mode == "shared":
+        if not base_params_file:
+            base_params_file = str(
+                Path(get_package_share_directory("lekiwi_base_bringup"))
+                / "config"
+                / "base.yaml"
+            )
+        try:
+            base_data = yaml.safe_load(Path(base_params_file).read_text())
+            base_params = base_data["/**"]["ros__parameters"]
+            wheel_safety_params = {
+                name: base_params[name]
+                for name in (
+                    "motor_ids",
+                    "max_ticks",
+                    "cmd_vel_timeout_s",
+                    "servo_acceleration",
+                    "diagnostics_period_s",
+                )
+            }
+        except (OSError, KeyError, TypeError, yaml.YAMLError) as exc:
+            raise RuntimeError(
+                f"invalid shared wheel safety parameter file: {base_params_file}"
+            ) from exc
 
     # The upstream description still requires legacy xacro argument names. The
     # selected control file ignores their values and always uses the ROS topic
@@ -50,6 +79,7 @@ def _setup_actions(context, *, bringup_share: Path):
             calibration_dir=calibration_dir,
             robot_id=robot_id,
             backend=backend,
+            motor_bus_mode=motor_bus_mode,
         ),
         value_type=str,
     )
@@ -61,7 +91,9 @@ def _setup_actions(context, *, bringup_share: Path):
         output="screen",
         parameters=[
             {
+                **wheel_safety_params,
                 "backend": backend,
+                "motor_bus_mode": motor_bus_mode,
                 "torque": torque,
                 "usb_port": usb_port,
                 "robot_id": robot_id,
@@ -170,6 +202,11 @@ def generate_launch_description():
                 default_value="mock",
                 description="mock: no serial access / lerobot: physical SO-101",
             ),
+            DeclareLaunchArgument(
+                "motor_bus_mode",
+                default_value="split",
+                description="split: separate arm/base ports; shared: one nine-motor bus",
+            ),
             DeclareLaunchArgument("usb_port", default_value="/dev/so101_follower"),
             DeclareLaunchArgument(
                 "torque", default_value="true",
@@ -189,6 +226,11 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "controllers_file",
                 default_value=str(bringup_share / "config" / "ros2_controllers.yaml"),
+            ),
+            DeclareLaunchArgument(
+                "base_params_file",
+                default_value="",
+                description="Shared wheel safety settings (max ticks/watchdog/acceleration)",
             ),
             DeclareLaunchArgument(
                 "description_file",

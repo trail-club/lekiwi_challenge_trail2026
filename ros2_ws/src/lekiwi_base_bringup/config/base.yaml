@@ -49,7 +49,7 @@
     base_frame: base_footprint
     publish_tf: true
     diagnostics_period_s: 5.0  # 電圧・温度の読み出し周期。0 で無効
-                               # 1 回あたり 9 回のシリアル往復が発生する
+                               # 1 回あたり車輪3台のシリアル往復が発生する
 
     # ── 診断 ────────────────────────────────────────────────────────
     dry_run: false             # true でシリアルを開かず odom/TF のみ出力
