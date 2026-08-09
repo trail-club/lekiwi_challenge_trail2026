@@ -60,9 +60,10 @@
   <xacro:arg name="wrist_camera_x" default="-0.00097"/>
   <xacro:arg name="wrist_camera_y" default="-0.06748"/>
   <xacro:arg name="wrist_camera_z" default="0.03586"/>
-  <xacro:arg name="wrist_camera_roll" default="3.03341"/>
+  <xacro:arg name="wrist_camera_roll" default="3.14159"/>
+  <!--wrist_camera_pitchを実機に合わせて調整する-->
   <xacro:arg name="wrist_camera_pitch" default="1.26087"/>
-  <xacro:arg name="wrist_camera_yaw" default="1.46705"/>
+  <xacro:arg name="wrist_camera_yaw" default="1.57079"/>
 
   <xacro:include filename="$(find lekiwi_description)/urdf/lekiwi_base.macro.xacro"/>
   <xacro:lekiwi_base prefix=""

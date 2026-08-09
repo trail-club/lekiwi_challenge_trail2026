@@ -457,6 +457,12 @@ lekiwi_examples/example_sequence.py, lekiwi_examples/image_saver.pyを参考に�
 
 ---
 
+## 調整すべきパラメータ
+
+[lekiwi_so101.urdf.xacro](ros2_ws/src/lekiwi_so101_bringup/urdf/lekiwi_so101.urdf.xacro)の`wrist_camera_pitch`は実機に応じて調整が必要です。
+
+rvizでWrist Camera Cloudの点群が実際の環境と一致するように調整してください。
+
 ## この機体の構成
 
 ```
