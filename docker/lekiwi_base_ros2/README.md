@@ -34,7 +34,7 @@ RPLIDAR や RealSense と同じ TF ツリー上に載せられます。
 - LeKiwi ベース本体、WaveShare サーボコントローラ、12V 電源
 
 > macOS では Docker にシリアルデバイスを渡せないため、この構成は動きません。
-> Mac から直接叩く場合は `examples/lekiwi_base_keyboard.py` を使ってください。
+> Mac から直接叩く場合は `lerobot_examples/lekiwi_base_keyboard.py` を使ってください。
 
 以下のコマンドは、この README があるディレクトリで実行します。
 
@@ -385,7 +385,7 @@ docker compose exec -it lekiwi-base /entrypoint.sh \
 > ros2 run lekiwi_examples teleop_keyboard   # j/l = strafe, [/] = 旋回
 > ```
 >
-> → [`ros2_ws/src/lekiwi_examples/README.md`](../../ros2_ws/src/lekiwi_examples/README.md)
+> → [`docs/examples.md`](../../docs/examples.md)
 
 **既定の `speed:=0.5` から始めないでください。** 0.1 → 0.2 と徐々に上げます。
 

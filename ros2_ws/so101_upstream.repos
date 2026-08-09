@@ -16,7 +16,7 @@
 #
 # なぜ vendored コピー (git にコミット) にしないか:
 #   so_arm101_description/meshes/*.stl は、既にこのリポジトリで追跡している
-#   examples/SO101/assets/*.stl と **バイト単位で同一** (13ファイル、約16MB。cmp で検証済み)。
+#   lerobot_examples/SO101/assets/*.stl と **バイト単位で同一** (13ファイル、約16MB。cmp で検証済み)。
 #   コミットすると同じバイト列を二重に git 履歴へ入れることになる。
 #   実体は .gitignore の ros2_ws/src/ros2_so_arm/ で追跡から外している。
 #

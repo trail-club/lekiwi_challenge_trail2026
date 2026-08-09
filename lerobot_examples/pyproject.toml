@@ -1,0 +1,37 @@
+# ★ ROS 2 を使わない lerobot 直叩き用の Python 環境。**ホストで直接動かす**。
+#
+#   ここのスクリプト（record_and_move.py / lekiwi_teleoperate.py …）は
+#   Docker も ROS 2 も使わず、lerobot から SO-101 を直接叩く。
+#   使い方は同じディレクトリの README.md。
+#
+#     cd lerobot_examples && uv sync && uv run python record_and_move.py
+#
+# ★ リポジトリルートの pyproject.toml とは**別物**。あちらは ROS 2 開発用で、
+#   venv はコンテナの中（Linux バイナリ）に作る。こちらはホストの Mac /
+#   Linux で動かすので、**そもそも共有できない**。
+#
+# ★ placo はここだけで使う（IK のサンプル用）。ROS 2 側の逆運動学は
+#   ros2_ws/src/lekiwi_examples/cartesian_math.py の自前実装で、placo は不要。
+#   macOS では placo がリンクする liburdfdom の扱いに手当てが要る
+#   （README.md 参照）。
+
+[project]
+name = "trail-so101-examples"
+version = "0.1.0"
+description = "ROS-free lerobot scripts for the SO-101 arm and LeKiwi base"
+readme = "../README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "lerobot[feetech]==0.5.1",
+    "placo>=0.9.6,<0.9.17",
+]
+
+[tool.uv]
+# ★★ ここを省略してはいけない。**uv は親ディレクトリの [tool.uv] を拾う**ので、
+#   省略するとリポジトリルートの `python-preference = "only-system"` が
+#   ここにも効いてしまう。あれは「コンテナの ROS が使う system Python 3.12 に
+#   合わせる」ための設定で、ホスト（特に macOS。system の python3 は 3.9）では
+#     error: No interpreter found for Python 3.12 in search path
+#   になる（実際に踏んだ）。
+#   こちらはホストで動かすので、uv が管理する Python を落としてきてよい。
+python-preference = "managed"

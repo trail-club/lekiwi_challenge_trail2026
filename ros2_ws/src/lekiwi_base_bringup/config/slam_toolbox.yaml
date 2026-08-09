@@ -52,6 +52,7 @@ slam_toolbox:
     #   0.5m 進むまでスキャンを取り込まないと地図がスカスカになる。
     minimum_travel_distance: 0.1
     minimum_travel_heading: 0.1
+    check_min_dist_and_heading_precisely: true
     scan_buffer_size: 10
     scan_buffer_maximum_scan_distance: 12.0
     link_match_minimum_response_fine: 0.1

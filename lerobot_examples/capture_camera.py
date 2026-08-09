@@ -1,9 +1,9 @@
 """
 SO101付属カメラから画像を取得するサンプル。
-カメラのインデックスは examples/config.toml の [camera] セクションで設定。
+カメラのインデックスは lerobot_examples/config.toml の [camera] セクションで設定。
 
 実行方法:
-    uv run python examples/capture_camera.py
+    uv run python capture_camera.py
 
 操作:
     s キー: 画像をファイルに保存

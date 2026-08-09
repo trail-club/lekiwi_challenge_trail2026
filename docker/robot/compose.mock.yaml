@@ -46,8 +46,12 @@ services:
       WRIST_CAMERA_NAME: ${WRIST_CAMERA_NAME:-wrist_camera}
       WRIST_CAMERA_PARENT: ${WRIST_CAMERA_PARENT:-gripper_link}
     volumes:
-      - ../../ros2_ws:/ros2_ws
+      # ★ リポジトリ全体を /app へ。venv (/app/.venv) をホスト側に置くため。
+      #   ワークスペースは /app/ros2_ws。/ros2_ws はイメージ内の symlink。
+      - ../..:/app
       - ./bootstrap.sh:/bootstrap.sh:ro
+      # 保存した画像をホストから見るため (lekiwi_examples の example_sequence)
+      - ../../captured_images:/captured_images
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-/tmp/.Xauthority}:/tmp/.Xauthority:ro
     command: ["bash"]

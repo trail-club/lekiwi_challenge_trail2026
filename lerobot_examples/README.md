@@ -8,25 +8,29 @@ Docker も使いません。
 > または leader/follower のテレオペを試したいときに使ってください。
 >
 > ★ ROS 2 側のアーム記述は `ros2_so_arm/so_arm101_description`（xacro）で、
-> ここで使う `examples/SO101/*.urdf` とは**別物**です。
+> ここで使う `lerobot_examples/SO101/*.urdf` とは**別物**です。
 > メッシュだけがバイト単位で同一です（詳細は
-> [`internals.md`](internals.md) と `ros2_ws/so101_upstream.repos`）。
+> [`../docs/internals.md`](../docs/internals.md) と `ros2_ws/so101_upstream.repos`）。
 
 ## セットアップ
 
 ```bash
 # Mac（開発機）
 brew install ffmpeg
-uv sync
+cd lerobot_examples && uv sync
 
 # Linux PC（実機を繋ぐほう）
 sudo apt-get update && sudo apt-get install -y ffmpeg
-uv sync
+cd lerobot_examples && uv sync
 ```
+
+> ★ **`lerobot_examples/` の中で叩くこと。** venv は `lerobot_examples/.venv` に作られます。
+> リポジトリ直下の `pyproject.toml` / `.venv` は**ROS 2 開発用**（コンテナの中で
+> 使う Linux バイナリ）で、こちらとは別物です → [`../README.md`](../README.md)。
 
 ## 設定
 
-`examples/config.toml` に書きます（ポート / ID・補間・IK の重み・カメラインデックス）。
+`config.toml` に書きます（ポート / ID・補間・IK の重み・カメラインデックス）。
 
 ```bash
 # ポートの調べ方
@@ -40,20 +44,20 @@ uv run python -m lerobot.scripts.lerobot_find_cameras
 
 | スクリプト | 内容 |
 | --- | --- |
-| `examples/record_and_move.py` | leader の関節角度を記録し、follower を同じ角度へ移動 |
-| `examples/record_and_move_ik.py` | leader の EE（エンドエフェクタ）位置を記録し、IK で解いて follower を移動 |
-| `examples/capture_camera.py` | SO-101 付属カメラのライブ映像を表示し、`s` キーで画像を保存 |
+| `record_and_move.py` | leader の関節角度を記録し、follower を同じ角度へ移動 |
+| `record_and_move_ik.py` | leader の EE（エンドエフェクタ）位置を記録し、IK で解いて follower を移動 |
+| `capture_camera.py` | SO-101 付属カメラのライブ映像を表示し、`s` キーで画像を保存 |
 
 ```bash
 # Linux PC（実機）
-uv run python examples/record_and_move.py
-uv run python examples/record_and_move_ik.py
-uv run python examples/capture_camera.py
+uv run python record_and_move.py
+uv run python record_and_move_ik.py
+uv run python capture_camera.py
 ```
 
 ## モデルファイル
 
-`examples/SO101/` に URDF と MuJoCo（MJCF）が入っています。
+`SO101/` に URDF と MuJoCo（MJCF）が入っています。
 
 | ファイル | 用途 |
 | --- | --- |
@@ -98,19 +102,27 @@ done
 
 `uv sync` 等で cmeel-urdfdom が再インストールされた場合は、上記を再実行してください。
 
-## ★ 較正（EEPROM を書き換える前に必ず控えを取る）
+## ★ 較正（EEPROM を書き換える前に必ずバックアップを取る）
 
-較正値の実体は**サーボの EEPROM** で、lerobot の JSON はその控えにすぎません。
-**書き込みは永続的です。**
+`lerobot-calibrate` は **EEPROM と JSON の両方**に書きます。EEPROM 側は
+`Homing_Offset` / `Min_Position_Limit` / `Max_Position_Limit` で、
+**電源を切っても残ります。**
+
+JSON 側は lerobot の正規化（生カウント ↔ 角度）に使われ、ROS 2 側では
+`calibration_limits.py` が URDF の関節可動域に反映します。
+`SO101Follower.calibrate()` は 2 つが食い違うと **JSON の値をモータへ書き戻す**
+ので、どちらか一方が「正」ということはありません。
 
 ```bash
-# Linux PC（実機）
+# Linux PC（実機）。lerobot_examples/ の中で
 cp -a ~/.cache/huggingface/lerobot/calibration/robots/so_follower \
       ~/so_follower_backup_$(date +%Y%m%d_%H%M)
 
-lerobot-calibrate --robot.type=so101_follower \
+uv run lerobot-calibrate --robot.type=so101_follower \
   --robot.port=/dev/so101_follower --robot.id=my_follower
 ```
 
 ★ **較正は ROS を止めた状態で行ってください。** ROS 側からは変更できませんし、
 Feetech のバスはマスタが 1 つしか居られません。
+
+初回の手順は [`../README.md`](../README.md) の 4 章にまとめてあります。

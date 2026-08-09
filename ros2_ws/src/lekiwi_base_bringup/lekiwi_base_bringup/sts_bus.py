@@ -4,7 +4,7 @@ lerobot の ``FeetechMotorsBus`` が内部で行っている処理のうち、�
 分だけを ``scservo_sdk`` 直叩きで再現したもの。lerobot 本体は torch を引き込む
 ため ROS 2 の Docker イメージには入れられない。
 
-参照元の実機検証済みコードは ``examples/lekiwi_base_keyboard.py``。
+参照元の実機検証済みコードは ``lerobot_examples/lekiwi_base_keyboard.py``。
 
 ────────────────────────────────────────────────────────────────────────
 必ず守ること (間違えるとサーボが暴走するか通信が不安定になる)

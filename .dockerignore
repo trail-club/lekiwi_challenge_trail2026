@@ -3,8 +3,8 @@
 .codex
 .env
 .venv
-# examples/ に lerobot 用の SO101 モデル (16MB) も含まれる。
-examples
+# lerobot_examples/ に lerobot 用の SO101 モデル (16MB) も含まれる。
+lerobot_examples
 uv.lock
 
 # LeKiwi 公式リポジトリのクローン (CAD/メッシュで約 289MB)。

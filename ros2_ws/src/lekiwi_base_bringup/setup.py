@@ -17,9 +17,8 @@ setup(
         (os.path.join("share", package_name, "rviz"), glob("rviz/*.rviz")),
     ],
     install_requires=["setuptools"],
-    # これが無いと colcon が setuptools の test コマンドへ落ちて
-    # 「NO TESTS RAN」になる (pytest を使うことの宣言でもある)。
-    tests_require=["pytest"],
+    # tests_require は現行 setuptools では未認識のため、extras_require を使う。
+    extras_require={"test": ["pytest"]},
     zip_safe=True,
     maintainer="maintainer",
     maintainer_email="maintainer@example.com",
