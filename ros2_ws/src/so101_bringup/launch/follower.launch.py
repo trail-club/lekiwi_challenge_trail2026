@@ -29,6 +29,7 @@ def _setup_actions(context, *, bringup_share: Path):
     controllers_file = LaunchConfiguration("controllers_file").perform(context)
     description_file = LaunchConfiguration("description_file").perform(context)
     joint_prefix = LaunchConfiguration("joint_prefix").perform(context)
+    torque = LaunchConfiguration("torque").perform(context).lower() == "true"
     control_file = bringup_share / "control" / "so101_follower.ros2_control.xacro"
 
     # The upstream description still requires legacy xacro argument names. The
@@ -61,6 +62,7 @@ def _setup_actions(context, *, bringup_share: Path):
         parameters=[
             {
                 "backend": backend,
+                "torque": torque,
                 "usb_port": usb_port,
                 "robot_id": robot_id,
                 "calibration_dir": calibration_dir,
@@ -169,6 +171,10 @@ def generate_launch_description():
                 description="mock: no serial access / lerobot: physical SO-101",
             ),
             DeclareLaunchArgument("usb_port", default_value="/dev/so101_follower"),
+            DeclareLaunchArgument(
+                "torque", default_value="true",
+                description="false: トルクを入れず指令も書かない。"
+                            "手でアームを動かして /joint_states を読むとき"),
             DeclareLaunchArgument(
                 "robot_id",
                 default_value="",

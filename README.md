@@ -159,6 +159,8 @@ bootstrapがuv syncとcolcon build --symlink-installをします。
 > robot.launchの起動時にトルクON、終了時にトルクOFFとなります。
 > 
 > トルクがOFFになるとアームは姿勢を保てず落ちることに注意してください。
+>
+> 最初からトルクを入れずに起動するには `arm_torque:=false`（後述）。
 
 よく使うコマンドはMakefileにまとめられています。
 
@@ -174,6 +176,27 @@ ros2 launch lekiwi_so101_bringup robot.launch.py \
 ```
 
 `robot_id` は 4 章の `--robot.id` に与えた名前です。
+
+### 手でアームを動かして角度を読む
+
+`arm_torque:=false` で起動すると、**トルクを入れず指令も書きません。**
+アームを手で動かして `/joint_states` で角度を読めます。
+
+```bash
+ros2 launch lekiwi_so101_bringup robot.launch.py \
+    backend:=lerobot robot_id:=my_follower arm_torque:=false
+```
+
+```bash
+# 別ターミナル（コンテナの中）
+ros2 topic echo /joint_states
+```
+
+> ★ **読み出しはトルクに関係なく動く**ので `/joint_states` も TF も出ます。
+> ベース・LiDAR・カメラは通常どおり動きます。
+>
+> ★ この状態では**軌道を送っても動きません**（`stow` も効きません）。
+> 動かすには `arm_torque:=true`（既定）で起動し直してください。
 
 ### 終了方法
 
