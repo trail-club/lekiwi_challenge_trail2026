@@ -196,6 +196,8 @@ bootstrapがuv syncとcolcon build --symlink-installをします。
 > robot.launchの起動時にトルクON、終了時にトルクOFFとなります。
 > 
 > トルクがOFFになるとアームは姿勢を保てず落ちることに注意してください。
+>
+> 最初からトルクを入れずに起動するには `arm_torque:=false`（後述）。
 
 よく使うコマンドはMakefileにまとめられています。
 
@@ -207,6 +209,26 @@ make run-shared LEKIWI_ROBOT_ID=my_lekiwi
 どちらもコンテナを起動した後、`motor_bus_mode` と4章の較正IDを渡して
 `robot.launch.py` を前面実行します。コンテナだけ起動する場合は
 `make up-split` / `make up-shared`、シェルへ入る場合は `make shell` です。
+
+### 手でアームを動かして角度を読む
+
+`arm_torque:=false` で起動すると、**トルクを入れず指令も書きません。**
+アームを手で動かして `/joint_states` で角度を読めます。
+
+```bash
+ros2 launch lekiwi_so101_bringup robot.launch.py \
+    backend:=lerobot robot_id:=my_follower arm_torque:=false
+```
+
+```bash
+# 別ターミナル（コンテナの中）
+ros2 topic echo /joint_states
+```
+
+> ★ **読み出しはトルクに関係なく動く**ので `/joint_states` も TF も出ます。
+> ベース・LiDAR・カメラは通常どおり動きます。
+>
+> アームを動かすには `arm_torque:=true`（既定）で起動し直してください。
 
 ### 終了方法
 
@@ -271,7 +293,6 @@ make release BUS_MODE=shared  # shared機
 | --- | --- | --- |
 | `/joint_trajectory_controller/follow_joint_trajectory` | **Action** | 関節を直接動かす（5 関節） |
 | `/parallel_gripper_action_controller/GripperActionController` | **Action** | グリッパ |
-| `/so101/stow` | **Service** | **アームを畳む。停止前に必ず** |
 | `/joint_states` | Topic `JointState` | 関節角。★ publisher は 2 つ（車輪 / アーム） |
 | `/so101/lerobot_bridge/shutdown` | **Service** | トルク OFF して終了 |
 
@@ -282,9 +303,6 @@ ros2 action send_goal -f /joint_trajectory_controller/follow_joint_trajectory \
   '{trajectory: {joint_names: [arm_shoulder_pan_joint, arm_shoulder_lift_joint,
      arm_elbow_flex_joint, arm_wrist_flex_joint, arm_wrist_roll_joint],
     points: [{positions: [0.0, 0.0, 0.5, 0.5, 0.0], time_from_start: {sec: 3}}]}}'
-
-# 畳む（★ 停止前に必ず）
-ros2 service call /so101/stow std_srvs/srv/Trigger '{}'
 ```
 
 > ★ `map` 上の点へアームを伸ばす「リーチ」が `lekiwi_examples` にあります。

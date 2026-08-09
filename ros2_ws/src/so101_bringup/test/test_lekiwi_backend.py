@@ -5,6 +5,7 @@ import types
 import pytest
 
 from so101_bringup.lerobot_backend import (
+    LEROBOT_JOINTS,
     LEKIWI_ARM_NAMES,
     LEKIWI_NAMES,
     LEKIWI_WHEEL_NAMES,
@@ -142,6 +143,25 @@ def test_connect_latches_arm_and_zeros_wheels_before_modes_and_torque(
     assert latch < zero < configure < enable
     assert events[zero][2] == LEKIWI_WHEEL_NAMES
     assert set(events[latch][2]) == set(LEKIWI_ARM_NAMES)
+
+
+def test_arm_torque_false_enables_only_wheels_and_discards_arm_commands(
+    tmp_path, monkeypatch
+):
+    _write_calibration(tmp_path)
+    events = []
+    _install_fake_lerobot(monkeypatch, events)
+    backend = LeRobotLeKiwiBackend(
+        "/dev/lekiwi", "robot", str(tmp_path), torque=False
+    )
+    backend.connect()
+
+    assert ("enable", LEKIWI_WHEEL_NAMES) in events
+    assert ("enable", LEKIWI_NAMES) not in events
+
+    events.clear()
+    backend.write_positions(dict.fromkeys(LEROBOT_JOINTS, 1.0))
+    assert not any(event[:2] == ("write", "Goal_Position") for event in events)
 
 
 def test_eeprom_mismatch_fails_before_torque_enable(tmp_path, monkeypatch):

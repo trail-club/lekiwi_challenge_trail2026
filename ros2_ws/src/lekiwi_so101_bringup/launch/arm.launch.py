@@ -57,6 +57,7 @@ def generate_launch_description():
 
     backend = LaunchConfiguration("backend")
     motor_bus_mode = LaunchConfiguration("motor_bus_mode")
+    torque = LaunchConfiguration("torque")
     joint_prefix = LaunchConfiguration("joint_prefix")
     usb_port = LaunchConfiguration("usb_port")
     robot_id = LaunchConfiguration("robot_id")
@@ -139,6 +140,10 @@ def generate_launch_description():
                 ),
             ),
             DeclareLaunchArgument("usb_port", default_value="/dev/so101_follower"),
+            DeclareLaunchArgument(
+                "torque", default_value="true",
+                description="false: トルクを入れず指令も書かない。"
+                            "手でアームを動かして /joint_states を読むとき"),
             DeclareLaunchArgument(
                 "robot_id",
                 default_value="",
@@ -225,6 +230,7 @@ def generate_launch_description():
                             ("shutdown_on_bridge_exit", "false"),
                             ("backend", backend),
                             ("motor_bus_mode", motor_bus_mode),
+                            ("torque", torque),
                             ("usb_port", usb_port),
                             ("robot_id", robot_id),
                             ("calibration_dir", calibration_dir),

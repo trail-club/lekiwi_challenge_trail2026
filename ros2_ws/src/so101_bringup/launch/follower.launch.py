@@ -32,6 +32,7 @@ def _setup_actions(context, *, bringup_share: Path):
     base_params_file = LaunchConfiguration("base_params_file").perform(context)
     description_file = LaunchConfiguration("description_file").perform(context)
     joint_prefix = LaunchConfiguration("joint_prefix").perform(context)
+    torque = LaunchConfiguration("torque").perform(context).lower() == "true"
     control_file = bringup_share / "control" / "so101_follower.ros2_control.xacro"
 
     wheel_safety_params = {}
@@ -93,6 +94,7 @@ def _setup_actions(context, *, bringup_share: Path):
                 **wheel_safety_params,
                 "backend": backend,
                 "motor_bus_mode": motor_bus_mode,
+                "torque": torque,
                 "usb_port": usb_port,
                 "robot_id": robot_id,
                 "calibration_dir": calibration_dir,
@@ -206,6 +208,10 @@ def generate_launch_description():
                 description="split: separate arm/base ports; shared: one nine-motor bus",
             ),
             DeclareLaunchArgument("usb_port", default_value="/dev/so101_follower"),
+            DeclareLaunchArgument(
+                "torque", default_value="true",
+                description="false: トルクを入れず指令も書かない。"
+                            "手でアームを動かして /joint_states を読むとき"),
             DeclareLaunchArgument(
                 "robot_id",
                 default_value="",

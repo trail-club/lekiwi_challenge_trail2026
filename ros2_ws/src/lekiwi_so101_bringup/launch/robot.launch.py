@@ -174,6 +174,10 @@ def generate_launch_description():
             description="backend:=lerobot では必須の LeRobot 較正 ID"),
         DeclareLaunchArgument("usb_port", default_value="/dev/so101_follower"),
         DeclareLaunchArgument(
+            "arm_torque", default_value="true",
+            description="false: アームのトルクを入れず指令も書かない。"
+                        "手で動かして /joint_states を読むとき"),
+        DeclareLaunchArgument(
             "split_calibration_dir",
             default_value="/root/.cache/huggingface/lerobot/calibration/robots/so_follower"),
         DeclareLaunchArgument(
@@ -228,6 +232,9 @@ def generate_launch_description():
                     ("motor_bus_mode", motor_bus_mode),
                     ("robot_id", robot_id),
                     ("usb_port", arm_port),
+                    # robot.launch.py 側は arm_torque。ベースにもトルクがあるので
+                    # どちらの話か分かる名前にしてある。下位は torque。
+                    ("torque", LaunchConfiguration("arm_torque")),
                     ("calibration_dir", calibration_dir),
                     ("joint_prefix", joint_prefix),
                     ("start_rviz", start_rviz),

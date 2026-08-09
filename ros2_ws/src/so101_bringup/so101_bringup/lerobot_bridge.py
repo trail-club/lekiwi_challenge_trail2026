@@ -44,6 +44,9 @@ class SO101LeRobotBridge(Node):
             "calibration_dir",
             "/root/.cache/huggingface/lerobot/calibration/robots/so_follower",
         )
+        # false: 起動時にトルクを入れず、指令も書かない。手でアームを動かして
+        # /joint_states で角度を読むための姿勢。読み出しはトルクに依存しない。
+        self.declare_parameter("torque", True)
         self.declare_parameter("update_rate", 50.0)
         self.declare_parameter("command_timeout", 0.5)
         self.declare_parameter("robot_description", "")
@@ -85,6 +88,13 @@ class SO101LeRobotBridge(Node):
         self._closed = False
         self._shutdown_requested = False
 
+        torque = bool(self.get_parameter("torque").value)
+        if not torque:
+            self.get_logger().warn(
+                "torque:=false でアームのトルクを入れません。指令も書きません "
+                "(手で動かして /joint_states を読むための姿勢です)"
+            )
+
         backend_name = str(self.get_parameter("backend").value)
         self._motor_bus_mode = str(self.get_parameter("motor_bus_mode").value)
         if self._motor_bus_mode not in ("split", "shared"):
@@ -97,13 +107,15 @@ class SO101LeRobotBridge(Node):
             raise ValueError("max_ticks must be positive")
         self._shared_bus = self._motor_bus_mode == "shared"
         if backend_name == "mock":
-            self._backend = MockLeKiwiBackend() if self._shared_bus else MockSO101Backend()
+            backend_type = MockLeKiwiBackend if self._shared_bus else MockSO101Backend
+            self._backend = backend_type(torque=torque)
         elif backend_name == "lerobot":
             backend_type = LeRobotLeKiwiBackend if self._shared_bus else LeRobotSO101Backend
             kwargs = {
                 "port": str(self.get_parameter("usb_port").value),
                 "robot_id": str(self.get_parameter("robot_id").value),
                 "calibration_dir": str(self.get_parameter("calibration_dir").value),
+                "torque": torque,
             }
             if self._shared_bus:
                 kwargs["wheel_acceleration"] = int(
