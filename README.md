@@ -79,6 +79,7 @@ done
 
 ```bash
 # リポジトリ直下で
+sudo rmdir /dev/lekiwi /dev/so101_follower /dev/rplidar
 sudo cp docker/lekiwi_base_ros2/99-lekiwi.rules /etc/udev/rules.d/
 sudo cp docker/so101_ros2/99-so101.rules        /etc/udev/rules.d/
 sudo cp docker/rplidar_ros2/99-rplidar.rules    /etc/udev/rules.d/
@@ -86,7 +87,7 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
 **④ 3 つとも見えることを確認する**
-
+ros
 ```bash
 ls -l /dev/lekiwi /dev/so101_follower /dev/rplidar
 ```
@@ -255,7 +256,7 @@ ros2 service call /so101/stow std_srvs/srv/Trigger '{}'
 > ★ `map` 上の点へアームを伸ばす「リーチ」が `lekiwi_examples` にあります。
 
 ### 8-2. ベース（走行・ナビゲーション）
-
+が厳しい気がする
 | 名前 | 種別 | 用途 |
 | --- | --- | --- |
 | `/goal_pose` | Topic `PoseStamped` | ナビ目標。RViz の "2D Goal Pose" と同じ |

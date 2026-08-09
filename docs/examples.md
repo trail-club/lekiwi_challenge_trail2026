@@ -180,7 +180,7 @@ ros2 run lekiwi_examples teleop_keyboard
   Ctrl+C  終了
 ```
 
-### 4. デカルト座標でのジョグ（手先を XYZ で動かす）
+### 4. デカルト座標でのジョグ（手先を XYZ で動かす）　** 未テスト **
 
 ```bash
 # コンテナ内

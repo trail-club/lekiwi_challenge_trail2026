@@ -97,7 +97,7 @@ class ExampleSequence(Node):
 
         result = self._send_goal(self._arm, goal, f"アーム({label})")
         if result.result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
-            raise RuntimeError(f"アームが失敗: {result.result.error_string}")
+            self.get_logger().error(f"アームが失敗: {result.result.error_string}")
 
     def move_forward(self) -> None:
         """いま向いている方向へ FORWARD_DISTANCE だけ進む。"""
@@ -132,7 +132,7 @@ class ExampleSequence(Node):
         # xy_goal_tolerance が 0.12 なので、ぴったり 0.5m では止まらない。
         result = self._send_goal(self._nav, goal, "ナビゲーション")
         if result.status != GoalStatus.STATUS_SUCCEEDED:
-            raise RuntimeError(f"ナビゲーションが失敗: status={result.status}")
+            self.get_logger().error(f"ナビゲーションが失敗: status={result.status}")
 
 
 def main() -> None:
