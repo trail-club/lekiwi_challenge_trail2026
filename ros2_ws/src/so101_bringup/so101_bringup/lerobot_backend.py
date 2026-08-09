@@ -331,6 +331,9 @@ class LeRobotLeKiwiBackend:
                 bus.enable_torque()
             else:
                 bus.enable_torque(list(LEKIWI_WHEEL_NAMES))
+                # configure_motors() 側の再有効化に巻き込まれないよう、
+                # 最後にアームだけ明示的に落とす。
+                bus.disable_torque(list(LEKIWI_ARM_NAMES))
         except Exception:
             self.disconnect()
             raise

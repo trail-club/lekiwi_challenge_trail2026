@@ -159,6 +159,10 @@ def test_arm_torque_false_enables_only_wheels_and_discards_arm_commands(
     assert ("enable", LEKIWI_WHEEL_NAMES) in events
     assert ("enable", LEKIWI_NAMES) not in events
 
+    wheel_enable = events.index(("enable", LEKIWI_WHEEL_NAMES))
+    arm_disable = events.index(("disable", LEKIWI_ARM_NAMES))
+    assert wheel_enable < arm_disable
+
     events.clear()
     backend.write_positions(dict.fromkeys(LEROBOT_JOINTS, 1.0))
     assert not any(event[:2] == ("write", "Goal_Position") for event in events)
