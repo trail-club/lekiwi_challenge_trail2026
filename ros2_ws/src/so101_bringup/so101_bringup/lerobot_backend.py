@@ -29,6 +29,8 @@ class MockSO101Backend:
     )
     connected: bool = False
     fault: Exception | None = None
+    # 実機と同じ意味。torque=False では指令を受け取っても姿勢が変わらない。
+    torque: bool = True
 
     def connect(self) -> None:
         self.connected = True
@@ -47,6 +49,8 @@ class MockSO101Backend:
             raise self.fault
         if set(positions) != set(LEROBOT_JOINTS):
             raise ValueError("mock backend requires all SO-101 joints")
+        if not self.torque:
+            return
         self.positions = {name: float(positions[name]) for name in LEROBOT_JOINTS}
 
     def inject_fault(self, fault: Exception) -> None:
@@ -60,13 +64,24 @@ class MockSO101Backend:
 class LeRobotSO101Backend:
     """Safe, non-interactive wrapper around LeRobot's SO101Follower."""
 
-    def __init__(self, port: str, robot_id: str, calibration_dir: str) -> None:
+    def __init__(
+        self,
+        port: str,
+        robot_id: str,
+        calibration_dir: str,
+        torque: bool = True,
+    ) -> None:
         if not robot_id:
             raise ValueError("robot_id is required for the lerobot backend")
         self.port = port
         self.robot_id = robot_id
         self.calibration_dir = Path(calibration_dir).expanduser()
         self.calibration_file = self.calibration_dir / f"{robot_id}.json"
+        # torque=False は「手でアームを動かして /joint_states で読む」ための姿勢。
+        # ★ トルクを切るだけでは足りない。write_positions を止めないと 50Hz で
+        #   Goal_Position を書き続け、何かの拍子にトルクが戻った瞬間に
+        #   最後の指令値へアームが飛ぶ。切るのと書かないのは必ず対で扱う。
+        self.torque = torque
         self._validate_calibration_file()
         self._robot = None
 
@@ -124,6 +139,11 @@ class LeRobotSO101Backend:
             current = robot.bus.sync_read("Present_Position")
             robot.bus.sync_write("Goal_Position", current)
             robot.configure()
+            if not self.torque:
+                # configure() がトルクを入れ直すので、その後で切る。
+                # 読み出し (Present_Position) はトルクの有無に関係なく動くので
+                # /joint_states は出続ける。
+                robot.bus.disable_torque()
         except Exception:
             self.disconnect()
             raise
@@ -140,8 +160,13 @@ class LeRobotSO101Backend:
     def write_positions(self, positions: dict[str, float]) -> None:
         if set(positions) != set(LEROBOT_JOINTS):
             raise ValueError("LeRobot backend requires all SO-101 joints")
+        robot = self._connected_robot()
+        if not self.torque:
+            # ★ 検証は上で済ませたうえで捨てる。壊れた指令は torque の有無に
+            #   関わらず弾きたい (torque=True へ戻したときに挙動が変わらない)。
+            return
         action = {f"{name}.pos": float(positions[name]) for name in LEROBOT_JOINTS}
-        self._connected_robot().send_action(action)
+        robot.send_action(action)
 
     def disconnect(self) -> None:
         robot, self._robot = self._robot, None
