@@ -35,8 +35,8 @@ sharedの車輪IDは `7=left, 8=back, 9=right` 固定です。split機の7.4Vア
 
 リポジトリをForkし、cloneする。
 ```bash
-git clone git@github.com:<ForkしたGitHubユーザー名>/trail_SO101.git
-cd trail_SO101
+git clone git@github.com:<ForkしたGitHubユーザー名>/lekiwi_challenge_trail2026.git
+cd lekiwi_challenge_trail2026
 ```
 
 ---
