@@ -58,12 +58,13 @@ VID/PID を確認します。
 udevadm info --attribute-walk --name=/dev/ttyACM0 | grep -m1 -E 'idVendor|idProduct'
 ```
 
-確認した値を `99-lekiwi.rules` の `XXXX` に反映してからコピーします。
+USBシリアルは `docker/robot/.env` の `LEKIWI_SERIAL` に設定します。
+追跡対象のルールはテンプレートなので直接編集・コピーしません。
 
 ```bash
-sudo cp 99-lekiwi.rules /etc/udev/rules.d/99-lekiwi.rules
-sudo udevadm control --reload-rules
-sudo udevadm trigger
+cd ../..
+make udev-dry-run BUS_MODE=shared
+make install-udev BUS_MODE=shared
 # 反映されない場合はUSBを抜き差しする
 ls -l /dev/lekiwi
 ```

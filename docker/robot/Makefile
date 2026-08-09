@@ -3,6 +3,7 @@
 # 使い方:
 #   make build       イメージをビルド
 #   make bootstrap   ★ 初回とパッケージ追加時。上流取得 + colcon build + 静的検査
+#   make install-udev BUS_MODE=shared|split  .env からホストudevルールを生成
 #   make up-split / make up-shared  コンテナだけ起動
 #   make run-split SO101_ROBOT_ID=my_follower
 #   make run-shared LEKIWI_ROBOT_ID=my_lekiwi
@@ -45,6 +46,11 @@ SO101_DEVICE   ?= /dev/so101_follower
 RPLIDAR_DEVICE ?= /dev/rplidar
 MAP_DIR        ?= $(HOME)/maps
 
+# USBシリアルは機体固有なので追跡ファイルへ書かない。.env からudev生成処理へ渡す。
+LEKIWI_SERIAL ?=
+SO101_SERIAL  ?=
+export LEKIWI_SERIAL SO101_SERIAL
+
 # ★ 別スタックのコンテナが同じ ROS_DOMAIN_ID に居ると /robot_description が
 #   二重に latch され、/tf も混信する (CLAUDE.md の「RViz に別のロボットが出る」)。
 #   統合したのでスタック内には 1 コンテナしか無い。止めたいのは他スタックのもの。
@@ -59,9 +65,10 @@ LEGACY += lekiwi-nav lekiwi-nav-mock lekiwi-so101-arm lekiwi-so101-arm-mock \
 CONFLICTS_FOR_REAL := $(LEGACY) $(SVC_MOCK)
 CONFLICTS_FOR_MOCK := $(LEGACY) $(SVC)
 
-.PHONY: build bootstrap up-split up-shared run-split run-shared \
+.PHONY: build bootstrap install-udev udev-dry-run up-split up-shared run-split run-shared \
         mock-split mock-shared shell stow save-map check release \
-        release-wheels release-check down logs guard guard-mock require-bus-mode
+        release-wheels release-check down logs guard guard-mock require-bus-mode \
+        preflight-shared-devices preflight-split-devices
 
 build:
 	docker compose -f compose.yaml build
@@ -72,6 +79,14 @@ build:
 #   --no-deps は不要 (サービスが 1 つしか無い)。デバイスを掴まない mock 側で走らせる。
 bootstrap:
 	docker compose -f compose.mock.yaml run --rm $(SVC_MOCK) bash /bootstrap.sh
+
+# 追跡対象の.rulesはテンプレート。機体固有値を.envから埋めてホストへ入れる。
+# dry-runはsudoも書き込みも行わず、生成されるルールだけを表示する。
+install-udev: require-bus-mode
+	bash ./install_udev.sh $(BUS_MODE)
+
+udev-dry-run: require-bus-mode
+	bash ./install_udev.sh --dry-run $(BUS_MODE)
 
 # $(1) に渡した名前のコンテナが動いていたら止めさせる。
 define guard_against
@@ -98,12 +113,22 @@ guard:
 guard-mock:
 	$(call guard_against,$(CONFLICTS_FOR_MOCK))
 
-up-split: guard
+preflight-shared-devices:
+	@test -c "$(LEKIWI_DEVICE)" || { \
+	  echo "ERROR: $(LEKIWI_DEVICE) が文字デバイスではない。make install-udev BUS_MODE=shared とUSB接続を確認すること" >&2; exit 1; }
+	@test -c "$(RPLIDAR_DEVICE)" || { \
+	  echo "ERROR: $(RPLIDAR_DEVICE) が文字デバイスではない。udevとLiDAR接続を確認すること" >&2; exit 1; }
+
+preflight-split-devices: preflight-shared-devices
+	@test -c "$(SO101_DEVICE)" || { \
+	  echo "ERROR: $(SO101_DEVICE) が文字デバイスではない。make install-udev BUS_MODE=split とUSB接続を確認すること" >&2; exit 1; }
+
+up-split: guard preflight-split-devices
 	@test -f .env || { echo "ERROR: .env が無い。cp .env.example .env して編集すること" >&2; exit 1; }
 	mkdir -p $(MAP_DIR)
 	docker compose -f compose.yaml -f compose.split.yaml up -d
 
-up-shared: guard
+up-shared: guard preflight-shared-devices
 	@test -f .env || { echo "ERROR: .env が無い。cp .env.example .env して編集すること" >&2; exit 1; }
 	mkdir -p $(MAP_DIR)
 	docker compose -f compose.yaml -f compose.shared.yaml up -d

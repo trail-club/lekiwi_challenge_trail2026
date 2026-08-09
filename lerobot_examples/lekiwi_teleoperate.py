@@ -4,7 +4,7 @@
 # Wired 版では host も Mac 上で動かす。先に別ターミナルでホストを起動しておくこと:
 #   uv run python -m lerobot.robots.lekiwi.lekiwi_host \
 #       --robot.id=my_kiwi \
-#       --robot.port=/dev/tty.usbmodem5A7A0178741 \
+#       --robot.port="${LEKIWI_DEVICE:-/dev/lekiwi}" \
 #       --robot.cameras='{
 #           "front": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30, "rotation": 180},
 #           "wrist": {"type": "opencv", "index_or_path": 1, "width": 480, "height": 640, "fps": 30, "rotation": 90}

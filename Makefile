@@ -2,6 +2,8 @@
 #
 #   make build       イメージをビルド
 #   make bootstrap   ★ 初回とパッケージ追加時。上流取得 + colcon build + 静的検査
+#   make install-udev BUS_MODE=shared|split
+#                    .env の機体固有USBシリアルからホストudevルールを生成
 #   make up-split / make up-shared
 #                    コンテナを**バックグラウンドで**起動する (compose up -d)。
 #                    bash が上がるだけで、ROS はまだ何も動いていない
@@ -55,6 +57,8 @@ help:
 	@echo ''
 	@echo '  make build       イメージをビルド'
 	@echo '  make bootstrap   ★ 初回とパッケージ追加時 (上流取得 + colcon build)'
+	@echo '  make install-udev BUS_MODE=...  .env からudevルールを生成・反映'
+	@echo '  make udev-dry-run BUS_MODE=...  生成内容を表示するだけ'
 	@echo '  make up-split / up-shared  コンテナだけを起動 (compose up -d)'
 	@echo '  make run-split   ★ 7.4Vアーム/12Vベースの2バス機を前面起動'
 	@echo '  make run-shared  ★ 全モータ12Vの1バス機を前面起動'

@@ -2,5 +2,13 @@
 services:
   robot:
     volumes:
-      - ${LEKIWI_DEVICE:-/dev/lekiwi}:${LEKIWI_DEVICE:-/dev/lekiwi}
-      - ${SO101_DEVICE:-/dev/so101_follower}:${SO101_DEVICE:-/dev/so101_follower}
+      - type: bind
+        source: ${LEKIWI_DEVICE:-/dev/lekiwi}
+        target: ${LEKIWI_DEVICE:-/dev/lekiwi}
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${SO101_DEVICE:-/dev/so101_follower}
+        target: ${SO101_DEVICE:-/dev/so101_follower}
+        bind:
+          create_host_path: false

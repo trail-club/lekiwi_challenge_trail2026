@@ -13,9 +13,8 @@
 # シリアルの調べ方 (Linux):
 #   udevadm info --attribute-walk --name=/dev/ttyACM0 | grep -m1 'ATTRS{serial}'
 #
-# macOS でのノード名 /dev/tty.usbmodem5A7A0180801 から、この基板のシリアルは
-# "5A7A018080" と推測できる (末尾の 1 はインタフェース番号)。ただし
-# **Linux で実測した値に必ず置き換えること**。
+# USBシリアルは docker/robot/.env の SO101_SERIAL にLinux実測値を書く。
+# このファイルはテンプレートで、`make install-udev BUS_MODE=split` が置換する。
 #
 # ID_MM_DEVICE_IGNORE について:
 #   ModemManager は新しく現れた CDC-ACM ポートへ数秒間 AT コマンドを送って
@@ -24,6 +23,6 @@
 #   LeRobotブリッジの通信エラーやROSコマンドwatchdog作動時はトルクOFFを試みる。
 #   ただしModemManagerとの競合自体を安全に回復できるわけではないため、無視設定は必須。
 
-SUBSYSTEM=="tty", ATTRS{serial}=="5A7A018080", \
+SUBSYSTEM=="tty", ATTRS{serial}=="@SO101_SERIAL@", \
   MODE:="0660", GROUP:="dialout", SYMLINK+="so101_follower", \
   ENV{ID_MM_DEVICE_IGNORE}="1", ENV{ID_MM_PORT_IGNORE}="1"

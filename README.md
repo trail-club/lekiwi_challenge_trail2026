@@ -75,13 +75,22 @@ for d in /dev/ttyACM*; do
 done
 ```
 
-**② ルールの `ATTRS{serial}` を①の値に書き換える**
+**② `.env` に①の値を書く**
 
-| ルールファイル | 作られる名前 | 識別のしかた | この機体の値 |
-| --- | --- | --- | --- |
-| `docker/lekiwi_base_ros2/99-lekiwi.rules` | `/dev/lekiwi` | `ATTRS{serial}` | `5A7A017874` |
-| `docker/so101_ros2/99-so101.rules` | `/dev/so101_follower` | `ATTRS{serial}` | `5A7A018080` |
-| `docker/rplidar_ros2/99-rplidar.rules` | `/dev/rplidar` | `idVendor:idProduct` | `10c4:ea60`（CP210x。**書き換え不要**） |
+追跡対象の `.rules` はテンプレートです。機体固有値で直接編集しません。
+
+```bash
+cp docker/robot/.env.example docker/robot/.env  # 初回だけ
+```
+
+```dotenv
+# docker/robot/.env
+LEKIWI_SERIAL=<sharedバスまたはベース基板のID_SERIAL_SHORT>
+SO101_SERIAL=<split機のアーム基板のID_SERIAL_SHORT>
+```
+
+shared機では `LEKIWI_SERIAL` だけが必須です。split機では両方必要です。
+RPLIDARは `10c4:ea60` で識別するためシリアル設定はありません。
 
 **基板を交換したらシリアルが変わります。**その都度①からやり直してください。
 
@@ -89,12 +98,15 @@ done
 
 ```bash
 # リポジトリ直下で
-sudo rmdir /dev/lekiwi /dev/so101_follower /dev/rplidar
-sudo cp docker/lekiwi_base_ros2/99-lekiwi.rules /etc/udev/rules.d/
-sudo cp docker/so101_ros2/99-so101.rules        /etc/udev/rules.d/
-sudo cp docker/rplidar_ros2/99-rplidar.rules    /etc/udev/rules.d/
-sudo udevadm control --reload-rules && sudo udevadm trigger
+make udev-dry-run BUS_MODE=shared  # 生成内容を見るだけ
+make install-udev BUS_MODE=shared  # shared機
+
+# split機の場合
+make install-udev BUS_MODE=split
 ```
+
+過去のCompose起動で `/dev/lekiwi` 等が空ディレクトリになっている場合、
+インストーラは安全のため停止します。表示された対象だけ `sudo rmdir` して再実行します。
 
 **④ 必要なデバイスが見えることを確認する**
 
@@ -109,6 +121,8 @@ ls -l /dev/so101_follower  # split機だけ必要
 cp docker/robot/.env.example docker/robot/.env
 getent group dialout        # 出力の 3 番目の数字が DIALOUT_GID（Ubuntu なら 20）
 ```
+
+USBシリアルを含む `.env` はGit管理外です。別機体ではその機体の `.env` を作ります。
 
 `DIALOUT_GID` が 20 で、④ のデバイスが見えているなら**編集不要**です。
 違うときだけ `.env` を書き換えてください。

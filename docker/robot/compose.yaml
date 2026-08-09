@@ -106,7 +106,12 @@ services:
     volumes:
       # privileged コンテナでは devices: の /dev 宛先が作られないため、
       # シリアルは bind mount で既存の安定名をそのまま渡す。
-      - ${RPLIDAR_DEVICE:-/dev/rplidar}:${RPLIDAR_DEVICE:-/dev/rplidar}
+      - type: bind
+        source: ${RPLIDAR_DEVICE:-/dev/rplidar}
+        target: ${RPLIDAR_DEVICE:-/dev/rplidar}
+        bind:
+          # デバイスが無いときに同名ディレクトリを作るとudev symlinkを妨害する。
+          create_host_path: false
       # ★ ROS ワークスペースはホストからマウントする。イメージにパッケージを
       #   焼き込まないので、lekiwi_description も so_arm101_description も
       #   ここから解決される。初回とパッケージ追加時は make bootstrap。

@@ -6,6 +6,7 @@
 # 操作: W/S 前後, A/D 左右, Z/X 旋回, R/F 速度段階, Q または Ctrl+C 終了
 # 注意: 12V 給電中はアーム(7.4V版)を絶対にバスへ再接続しないこと。
 
+import os
 import time
 
 import numpy as np
@@ -14,7 +15,9 @@ from pynput import keyboard as pynput_keyboard
 from lerobot.motors import Motor, MotorNormMode
 from lerobot.motors.feetech import FeetechMotorsBus
 
-PORT = "/dev/tty.usbmodem5A7A0178741"
+# 機体固有のUSBシリアルをコードへ書かない。Linuxではudev安定名を使い、
+# 別名が必要な環境だけLEKIWI_DEVICEで上書きする。
+PORT = os.environ.get("LEKIWI_DEVICE", "/dev/lekiwi")
 FPS = 30
 
 # 速度プリセット (R で上げ、F で下げる)。従来の最速 0.4 m/s の上に 0.6 を追加

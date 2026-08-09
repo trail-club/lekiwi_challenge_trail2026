@@ -53,9 +53,15 @@ LiDAR / SLAM / Nav2 / SO-101 アーム / 手首カメラ（RealSense）を **1 �
 ```bash
 cd docker/robot
 cp .env.example .env      # ★ 先に実機に合わせて編集する
+make udev-dry-run BUS_MODE=shared
+make install-udev BUS_MODE=shared  # .env の LEKIWI_SERIAL からホストルールを生成
 make build
 make bootstrap            # ★ 初回とパッケージ追加時。上流取得 + colcon build + 静的検査
 ```
+
+split機では `.env` の `LEKIWI_SERIAL` と `SO101_SERIAL` を設定し、
+`make install-udev BUS_MODE=split` を使います。機体固有のシリアルを追跡対象の
+`.rules` へ直接書かないでください。
 
 `make bootstrap` は `ros2_ws` をホストからマウントしたまま `colcon build
 --symlink-install` する。成果物はホスト側の `ros2_ws/build`・`install` に残るので、
