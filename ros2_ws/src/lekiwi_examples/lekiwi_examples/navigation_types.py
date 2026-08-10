@@ -1,8 +1,8 @@
-"""Navigation application layer that is independent from ROS 2.
+"""ROS 2に依存しないNavigation用の小さい型定義。
 
-The competition tells us where an object or drop zone is, but the mobile base
-must not drive onto that point.  This module deliberately keeps a landmark and
-the pose at which the arm can work as separate concepts.
+競技では物体やDrop Zoneの位置が与えられるが、ロボット中心をそこへ突っ込ませては
+いけない。ここでは「ランドマークの位置」と「アームが作業しやすい停止位置」を
+別の概念として扱う。
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import math
 
 @dataclass(frozen=True)
 class PlanarPose:
-    """A pose in the map frame, expressed as x, y and yaw in radians."""
+    """map座標系での姿勢。x, y, yaw[rad]で表す。"""
 
     x: float
     y: float
@@ -21,7 +21,7 @@ class PlanarPose:
 
     def __post_init__(self) -> None:
         if not all(math.isfinite(value) for value in (self.x, self.y, self.yaw)):
-            raise ValueError("x, y, and yaw must all be finite")
+            raise ValueError("x, y, yawはすべて有限値にしてください")
 
 
 def approach_pose_from_landmark(
@@ -30,20 +30,19 @@ def approach_pose_from_landmark(
     *,
     final_yaw: float | None = None,
 ) -> PlanarPose:
-    """Return the base pose at ``standoff_m`` in front of a landmark.
+    """ランドマークの手前``standoff_m``にあるロボット停止姿勢を返す。
 
-    ``final_yaw`` is the heading required by the arm at arrival.  The robot is
-    placed behind that heading so that its +X direction points at the landmark.
-    Passing it explicitly keeps object/drop geometry independent from the
-    preferred grasp/place orientation.  If omitted, the landmark yaw is used.
+    ``final_yaw``は到着時にアームが作業しやすいロボットの向きである。
+    ロボットの+X方向がランドマークを向くように、その向きの後ろ側へ停止位置を置く。
+    省略した場合はランドマーク自身のyawを使う。
     """
 
     if not math.isfinite(standoff_m) or standoff_m < 0.0:
-        raise ValueError("standoff_m must be a finite value greater than or equal to zero")
+        raise ValueError("standoff_mは0以上の有限値にしてください")
 
     yaw = landmark.yaw if final_yaw is None else final_yaw
     if not math.isfinite(yaw):
-        raise ValueError("final_yaw must be finite")
+        raise ValueError("final_yawは有限値にしてください")
 
     return PlanarPose(
         x=landmark.x - standoff_m * math.cos(yaw),

@@ -1,9 +1,8 @@
-"""Thin competition-facing wrapper around Nav2's existing NavigateToPose API.
+"""競技タスク側からNav2のNavigateToPoseを呼ぶための薄いラッパ。
 
-This module intentionally owns no planner, controller, localisation, or
-``/cmd_vel`` publisher.  Those responsibilities already belong to Nav2 and
-``lekiwi_base_bringup``.  It gives the task orchestrator one blocking call with
-a bounded retry policy and a result it can turn into its own state transition.
+このモジュールでは、経路計画・制御・自己位置推定・``/cmd_vel`` publishを持たない。
+それらは既存のNav2と``lekiwi_base_bringup``に任せる。ここではTask Orchestratorが
+「指定姿勢へ行く」「成功/失敗を受け取る」ための小さい入口だけを提供する。
 """
 
 from __future__ import annotations
@@ -20,7 +19,7 @@ from .navigation_types import PlanarPose
 
 
 class NavigationStatus(str, Enum):
-    """Outcome exposed to the competition-level task orchestrator."""
+    """競技レベルの状態遷移へ渡すNavigation結果。"""
 
     SUCCEEDED = "succeeded"
     REJECTED = "rejected"
@@ -40,10 +39,10 @@ class NavigationResult:
 
 
 def pose_stamped(target: PlanarPose, *, frame_id: str = "map") -> PoseStamped:
-    """Convert a planar target to the Nav2 message type without tf helpers."""
+    """x, y, yawの目標姿勢をNav2へ渡すPoseStampedへ変換する。"""
 
     if not frame_id:
-        raise ValueError("frame_id must not be empty")
+        raise ValueError("frame_idは空にできません")
 
     pose = PoseStamped()
     pose.header.frame_id = frame_id
@@ -55,7 +54,7 @@ def pose_stamped(target: PlanarPose, *, frame_id: str = "map") -> PoseStamped:
 
 
 class CompetitionNavigator(BasicNavigator):
-    """Use Nav2's Simple Commander with a bounded retry/timeout policy."""
+    """Nav2 Simple Commanderにリトライとタイムアウトを足した競技用入口。"""
 
     def __init__(self, node_name: str = "competition_navigator") -> None:
         super().__init__(node_name=node_name)
@@ -68,21 +67,20 @@ class CompetitionNavigator(BasicNavigator):
         timeout_sec: float = 90.0,
         max_retries: int = 2,
     ) -> NavigationResult:
-        """Navigate to ``target`` and return only after success or final failure.
+        """``target``へ移動し、成功または最終失敗が決まってから結果を返す。
 
-        ``max_retries`` is the number of *additional* attempts, so the default
-        permits three total Nav2 goals.  Cancelling on timeout returns control to
-        Nav2 before the next attempt; no direct velocity command is ever sent.
+        ``max_retries``は追加試行回数で、既定値では合計3回までNav2 goalを送る。
+        タイムアウト時は次の試行前にNav2へcancelを送り、ここから直接速度指令は出さない。
         """
 
         if not math.isfinite(timeout_sec) or timeout_sec <= 0.0:
-            raise ValueError("timeout_sec must be a positive finite value")
+            raise ValueError("timeout_secは正の有限値にしてください")
         if max_retries < 0:
-            raise ValueError("max_retries must be greater than or equal to zero")
+            raise ValueError("max_retriesは0以上にしてください")
 
         goal = pose_stamped(target, frame_id=frame_id)
         last_status = NavigationStatus.FAILED
-        last_detail = "NavigateToPose did not report a result"
+        last_detail = "NavigateToPoseの結果が返りませんでした"
 
         for attempt in range(1, max_retries + 2):
             self.get_logger().info(
@@ -91,7 +89,7 @@ class CompetitionNavigator(BasicNavigator):
             )
             if not self.goToPose(goal):
                 last_status = NavigationStatus.REJECTED
-                last_detail = "NavigateToPose goal was rejected"
+                last_detail = "NavigateToPose goalが拒否されました"
                 continue
 
             deadline = time.monotonic() + timeout_sec
@@ -99,7 +97,7 @@ class CompetitionNavigator(BasicNavigator):
             while not self.isTaskComplete():
                 if time.monotonic() >= deadline:
                     self.get_logger().warn(
-                        f"Nav2 attempt {attempt} exceeded {timeout_sec:.1f}s; cancelling"
+                        f"Nav2試行{attempt}が{timeout_sec:.1f}秒を超えたためcancelします"
                     )
                     self.cancelTask()
                     timed_out = True
@@ -109,12 +107,12 @@ class CompetitionNavigator(BasicNavigator):
                 return NavigationResult(
                     NavigationStatus.SUCCEEDED,
                     attempt,
-                    "Nav2 NavigateToPose succeeded",
+                    "Nav2 NavigateToPoseが成功しました",
                 )
 
             if timed_out:
                 last_status = NavigationStatus.TIMED_OUT
-                last_detail = f"NavigateToPose exceeded {timeout_sec:.1f}s"
+                last_detail = f"NavigateToPoseが{timeout_sec:.1f}秒を超えました"
             else:
                 last_status = NavigationStatus.FAILED
                 last_detail = f"Nav2 result: {self.getResult().name}"

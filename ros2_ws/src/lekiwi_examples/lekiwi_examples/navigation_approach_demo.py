@@ -1,6 +1,6 @@
-"""Navigate to an approach pose derived from an object or drop-zone landmark.
+"""物体やDrop Zoneの座標から手前のapproach poseを作り、Nav2で移動するデモ。
 
-Example::
+実行例::
 
     ros2 run lekiwi_examples navigation_approach_demo --ros-args \
       -p landmark_x:=1.0 -p landmark_y:=0.0 -p approach_yaw:=0.0 \
@@ -40,9 +40,10 @@ def main() -> None:
         )
 
         navigator.get_logger().info(
-            "Approach pose from landmark "
+            "ランドマークから作ったapproach pose: landmark="
             f"({landmark.x:.3f}, {landmark.y:.3f}, {landmark.yaw:.3f}) "
-            f"with standoff {float(navigator.get_parameter('standoff_m').value):.3f} m: "
+            f"standoff={float(navigator.get_parameter('standoff_m').value):.3f} m "
+            "approach="
             f"({approach.x:.3f}, {approach.y:.3f}, {approach.yaw:.3f})"
         )
         result = navigator.navigate_to(

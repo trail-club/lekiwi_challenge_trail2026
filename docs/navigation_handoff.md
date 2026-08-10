@@ -1,14 +1,14 @@
-# Navigation Handoff
+# Navigation引き継ぎメモ
 
-This branch is the active Navigation branch for the LeKiwi + SO-101 real robot.
+このブランチが、LeKiwi + SO-101実機で使うNavigation作業ブランチである。
 
-Branch:
+ブランチ:
 
 ```text
 dev-navigation
 ```
 
-Expected files:
+入っているはずのファイル:
 
 ```text
 docs/navigation.md
@@ -18,7 +18,7 @@ ros2_ws/src/lekiwi_examples/lekiwi_examples/navigation_types.py
 ros2_ws/src/lekiwi_examples/test/test_navigation_types.py
 ```
 
-Quick check:
+確認コマンド:
 
 ```bash
 git branch --show-current
@@ -26,7 +26,7 @@ git log --oneline -1
 find . -name navigation_demo.py
 ```
 
-Run after build/bootstrap and after the robot stack is already running:
+`make build` / `make bootstrap` 後、さらにロボットスタックが起動済みの状態で実行する:
 
 ```bash
 make shell
@@ -35,9 +35,9 @@ ros2 run lekiwi_examples navigation_demo --ros-args \
   -p target_x:=0.2 -p target_y:=0.0 -p target_yaw:=0.0
 ```
 
-Safety notes:
+安全メモ:
 
-- Confirm `shared` or `split` before any real hardware run.
-- Start with `BACKEND=mock` unless the arm calibration and bus mode are confirmed.
-- Use a small target first, such as `target_x:=0.2`.
-- Keep access to the physical power switch during the first motion test.
+- 実機を動かす前に、必ず`shared`か`split`かを確認する。
+- アーム較正とバス構成が確認できるまでは、まず`BACKEND=mock`で起動する。
+- 最初は`target_x:=0.2`のような小さい目標で試す。
+- 初回の移動テスト中は、すぐ物理電源を切れる状態にしておく。

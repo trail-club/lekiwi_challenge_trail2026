@@ -1,6 +1,6 @@
-"""Send one approach pose to Nav2 and print a bounded success/failure result.
+"""指定したmap座標の姿勢をNav2へ送り、成功/失敗をログに出す最小デモ。
 
-Example (with ``make mock-shared`` already running)::
+実行例（先に``make mock-shared``などでNav2を起動しておく）::
 
     ros2 run lekiwi_examples navigation_demo --ros-args \
       -p target_x:=1.0 -p target_y:=0.0 -p target_yaw:=0.0
