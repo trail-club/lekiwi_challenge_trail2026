@@ -27,6 +27,7 @@
   <depend>tf2_ros</depend>
   <depend>python3-opencv</depend>
   <depend>nav2_msgs</depend>
+  <exec_depend>nav2_simple_commander</exec_depend>
   <depend>python3-numpy</depend>
   <!-- キーボード入力。keyboard_input.py が使う -->
   <depend>python3-pynput</depend>

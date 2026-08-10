@@ -220,6 +220,17 @@ check:
 	echo "--- ★ nav2 と ros2_control の action が同時に見えること ---"; \
 	docker exec $$C $(E) ros2 action list | grep -E 'navigate_to_pose|follow_joint_trajectory' || \
 	  echo "  ★ 片方しか見えない。分割時の症状が残っている"; \
+	echo "--- Nav2 lifecycle (期待: planner_server / bt_navigator ともに active) ---"; \
+	for i in $$(seq 1 30); do \
+	  planner=$$(docker exec $$C $(E) ros2 lifecycle get /planner_server 2>/dev/null || true); \
+	  navigator=$$(docker exec $$C $(E) ros2 lifecycle get /bt_navigator 2>/dev/null || true); \
+	  case "$$planner|$$navigator" in *"active [3]"*"active [3]"*) break;; esac; \
+	  sleep 2; \
+	done; \
+	echo "  planner_server: $$planner"; \
+	echo "  bt_navigator:   $$navigator"; \
+	case "$$planner|$$navigator" in *"active [3]"*"active [3]"*) ;; *) \
+	  echo "  ★ Nav2 action名だけでは不十分です。Lifecycleがinactiveなのでgoalを受け付けません。" >&2; exit 1;; esac; \
 	echo "--- map -> wrist_camera_depth_optical_frame ---"; \
 	$(call echo_tf,$$C,map,wrist_camera_depth_optical_frame,realsense が未起動か camera_name 不一致); \
 	echo "--- map -> arm_gripper_frame_link ---"; \
