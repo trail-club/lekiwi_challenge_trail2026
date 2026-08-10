@@ -57,7 +57,7 @@ dependencies = [
     #     Argument(s) {'path'} are declared in the hookimpl but can not be
     #     found in the hookspec
     #   Ubuntu 24.04 の python3-pytest は 7.4.4。
-    "pytest==7.4.4",
+    "pytest==9.0.3",
 
     # ── colcon ────────────────────────────────────────────────
     # ★★ colcon を **venv 側に入れる**こと。apt の /usr/bin/colcon で
