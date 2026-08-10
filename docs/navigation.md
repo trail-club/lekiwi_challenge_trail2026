@@ -36,6 +36,17 @@ pick_approach = approach_pose_from_landmark(
 `standoff_m`と`final_yaw`は、Pick/Place担当がアームの到達性を実測して決める値である。
 大会の0.5m採点半径は停止精度ではないので、到達可能なアーム姿勢と衝突余裕で決める。
 
+実機でこの変換込みの移動を試す最小入口は`navigation_approach_demo`である。
+
+```bash
+ros2 run lekiwi_examples navigation_approach_demo --ros-args \
+  -p landmark_x:=1.0 -p landmark_y:=0.0 -p landmark_yaw:=0.0 \
+  -p approach_yaw:=0.0 -p standoff_m:=0.45
+```
+
+この例は「ランドマーク `(1.0, 0.0)` の0.45m手前」にapproach poseを作り、Nav2へ送る。
+`approach_yaw`が最終停止時のロボット向きである。
+
 ## Goal Checker
 
 `lekiwi_base_bringup/config/nav2.yaml`で既に以下が有効である。

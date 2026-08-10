@@ -27,6 +27,8 @@ setup(
             "example_sequence = lekiwi_examples.example_sequence:main",
             # Nav2 NavigateToPose を競技用のリトライ付きAPIで呼ぶ最小例
             "navigation_demo = lekiwi_examples.navigation_demo:main",
+            # 物体/Drop Zoneの座標から手前の approach pose を作ってNav2へ送る例
+            "navigation_approach_demo = lekiwi_examples.navigation_approach_demo:main",
             # 手首カメラの画像をサービス呼び出しで保存する
             "image_saver = lekiwi_examples.image_saver:main",
             # map 上の点へアームを伸ばす（RViz の "Publish Point"）
