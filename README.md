@@ -259,7 +259,7 @@ make release BUS_MODE=shared  # shared機
 
 | ツール | 出すもの | 何が起きるか |
 | --- | --- | --- |
-| **2D Goal Pose** | `/goal_pose` | **その姿勢へ走る**（Nav2） |
+| **2D Goal Pose** | `/goal_pose` | **その姿勢へ走る**（Nav2、または `lekiwi_examples` の `goal_drive`） |
 | **2D Pose Estimate** | `/initialpose` | AMCL の初期姿勢。★ **保存地図構成（`use_saved_map:=true`）のときだけ**意味があります |
 
 ### 表示（Displays パネル）
@@ -311,7 +311,7 @@ ros2 action send_goal -f /joint_trajectory_controller/follow_joint_trajectory \
 が厳しい気がする
 | 名前 | 種別 | 用途 |
 | --- | --- | --- |
-| `/goal_pose` | Topic `PoseStamped` | ナビ目標。RViz の "2D Goal Pose" と同じ |
+| `/goal_pose` | Topic `PoseStamped` | ナビ目標。RViz の "2D Goal Pose"。Nav2 なしなら `ros2 run lekiwi_examples goal_drive` |
 | `/navigate_to_pose` | **Action** | ナビの本筋。**結果とフィードバックが得られる** |
 | `/compute_path_to_pose` | **Action** | 経路計画だけ（走らない）。到達可能かの確認 |
 | `/cmd_vel` | Topic `Twist` | 速度指令。★ **安全機構より下流**（下記） |
