@@ -34,6 +34,8 @@ setup(
             # デカルト座標でアーム手先をジョグする（下 2 つで 1 組）
             "cartesian_jog = lekiwi_examples.cartesian_jog:main",
             "cartesian_keyboard = lekiwi_examples.keyboard_input:main",
+            # RViz 2D Goal Pose へ前向きだけ寄る (Nav2 なし)
+            "goal_drive = lekiwi_examples.goal_drive:main",
         ],
     },
 )
